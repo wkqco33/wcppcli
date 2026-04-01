@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
     info_cmd->handler = [&](const Command& cmd) {
         Panel p;
         p.title = "App Information";
-        p.content = "Name: " + conf.get_string("app_name") + " (v" + std::to_string(conf.get_int("version")) + ")";
+        p.content = "Name: " + conf.get_string("app_name") + "\nVersion: v" + std::to_string(conf.get_int("version"));
         p.render();
 
         if (!cmd.args.empty()) {

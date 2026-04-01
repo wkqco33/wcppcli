@@ -69,10 +69,31 @@ namespace wcppcli {
 
     // --- Panel ---
     void Panel::render() const {
-        size_t width = std::max(title.size(), content.size()) + 4;
-        std::string top = " " + title + " " + std::string(width - title.size() - 2, '-');
-        std::cout << format("+" + top + "+", border_style) << std::endl;
-        std::cout << format("| ", border_style) << content << std::string(width - content.size() - 1, ' ') << format("|", border_style) << std::endl;
+        std::vector<std::string> lines;
+        std::istringstream iss(content);
+        std::string line;
+        size_t max_content_width = 0;
+        while (std::getline(iss, line)) {
+            lines.push_back(line);
+            max_content_width = std::max(max_content_width, line.size());
+        }
+
+        if (lines.empty()) {
+            lines.push_back("");
+        }
+
+        size_t width = std::max(title.size() + 2, max_content_width) + 2;
+        
+        // 상단 테두리
+        std::string top_border = " " + title + " " + std::string(width - title.size() - 2, '-');
+        std::cout << format("+" + top_border + "+", border_style) << std::endl;
+
+        // 내용 출력
+        for (const auto& l : lines) {
+            std::cout << format("| ", border_style) << l << std::string(width - l.size() - 1, ' ') << format("|", border_style) << std::endl;
+        }
+
+        // 하단 테두리
         std::cout << format("+" + std::string(width, '-') + "+", border_style) << std::endl;
     }
 
