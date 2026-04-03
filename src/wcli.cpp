@@ -60,17 +60,17 @@ namespace wcppcli {
     }
 
     void Command::print_help() const {
-        print(name, Style{.fg = Color::Yellow, .bold = true});
+        print(name, Style(Color::Yellow, Color::None, true));
         if (!description.empty()) std::cout << description << std::endl << std::endl;
-        print("Usage:", Style{.fg = Color::Green, .bold = true});
+        print("Usage:", Style(Color::Green, Color::None, true));
         std::cout << "  " << (usage.empty() ? (name + " [command] [flags] [args]") : usage) << std::endl << std::endl;
         if (!subcommands.empty()) {
-            print("Available Commands:", Style{.fg = Color::Green, .bold = true});
+            print("Available Commands:", Style(Color::Green, Color::None, true));
             for (const auto& cmd : subcommands) std::cout << "  " << std::left << std::setw(15) << cmd->name << " " << cmd->description << std::endl;
             std::cout << std::endl;
         }
         if (!flags.empty()) {
-            print("Flags:", Style{.fg = Color::Green, .bold = true});
+            print("Flags:", Style(Color::Green, Color::None, true));
             for (const auto& f : flags) {
                 std::string info = "  ";
                 if (f.shorthand != 0) { info += "-"; info += f.shorthand; info += ", "; }

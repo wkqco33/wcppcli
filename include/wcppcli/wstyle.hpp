@@ -16,10 +16,13 @@ namespace wcppcli {
         Color fg = Color::None;
         Color bg = Color::None;
         bool bold = false, dim = false, italic = false, underline = false, blink = false, reverse = false, hidden = false, strikethrough = false;
+
+        Style(Color f = Color::None, Color b = Color::None, bool bld = false)
+            : fg(f), bg(b), bold(bld) {}
     };
 
     std::string format(std::string_view text, const Style& style);
-    void print(std::string_view text, const Style& style = {});
+    void print(std::string_view text, const Style& style = Style());
 
     // --- Advanced UI Components ---
 
@@ -31,7 +34,7 @@ namespace wcppcli {
 
     class Table {
         public:
-            void add_column(const std::string& header, const Style& header_style = {}, const Style& cell_style = {});
+            void add_column(const std::string& header, const Style& header_style = Style(), const Style& cell_style = Style());
             void add_row(const std::vector<std::string>& row);
             void render() const;
         private:
@@ -44,7 +47,7 @@ namespace wcppcli {
         std::string label;
         float progress = 0.0f;
         int width = 40;
-        Style bar_style = {.fg = Color::Green}, bg_style = {.fg = Color::Black, .bold = true};
+        Style bar_style = Style(Color::Green), bg_style = Style(Color::Black, Color::None, true);
         void render() const;
     };
 
@@ -52,7 +55,7 @@ namespace wcppcli {
     struct Panel {
         std::string title;
         std::string content;
-        Style border_style = {.fg = Color::Blue};
+        Style border_style = Style(Color::Blue);
         void render() const;
     };
 

@@ -32,7 +32,7 @@ int main(int argc, char** argv) {
         p.render();
 
         if (!cmd.args.empty()) {
-            print("\nExtra Arguments provided:", {.fg = Color::Yellow});
+            print("\nExtra Arguments provided:", Style(Color::Yellow));
             for (const auto& arg : cmd.args) std::cout << " - " << arg << std::endl;
         }
     };
@@ -42,8 +42,8 @@ int main(int argc, char** argv) {
     table_cmd->description = "Display a stylish table";
     table_cmd->handler = [](const Command&) {
         Table t;
-        t.add_column("Key", {.fg = Color::Cyan, .bold = true});
-        t.add_column("Value", {.fg = Color::White});
+        t.add_column("Key", Style(Color::Cyan, Color::None, true));
+        t.add_column("Value", Style(Color::White));
         t.add_row({"OS", "Linux"});
         t.add_row({"Lang", "C++17"});
         t.add_row({"Library", "wcppcli"});

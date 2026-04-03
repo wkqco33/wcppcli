@@ -29,19 +29,19 @@ int main() {
     std::cout << "--- Config Formats Test ---" << std::endl;
 
     if (conf.read_json("config.json")) {
-        print("JSON Loaded:", {.fg = Color::Green, .bold = true});
+        print("JSON Loaded:", Style(Color::Green, Color::None, true));
         std::cout << "  App Name: " << conf.get_string("app_name") << std::endl;
         std::cout << "  Port: " << conf.get_int("port") << std::endl;
     }
 
     if (conf.read_toml("config.toml")) {
-        print("TOML Loaded:", {.fg = Color::Green, .bold = true});
+        print("TOML Loaded:", Style(Color::Green, Color::None, true));
         std::cout << "  Host: " << conf.get_string("host") << std::endl;
         std::cout << "  Timeout: " << conf.get_int("timeout") << std::endl;
     }
 
     if (conf.read_yaml("config.yaml")) {
-        print("YAML Loaded:", {.fg = Color::Green, .bold = true});
+        print("YAML Loaded:", Style(Color::Green, Color::None, true));
         std::cout << "  Version: " << conf.get_string("version") << std::endl;
         std::cout << "  Author: " << conf.get_string("author") << std::endl;
     }

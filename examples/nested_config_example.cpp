@@ -33,14 +33,14 @@ int main() {
     conf.read_file("nested.toml");
     conf.read_file("nested.yaml");
 
-    print("Server Config (JSON Nested):", {.fg = Color::Cyan, .bold = true});
+    print("Server Config (JSON Nested):", Style(Color::Cyan, Color::None, true));
     std::cout << "  Host: " << conf.get_string("server.host") << std::endl;
     std::cout << "  Port: " << conf.get_int("server.port") << std::endl;
 
-    print("\nDatabase Config (TOML Section):", {.fg = Color::Magenta, .bold = true});
+    print("\nDatabase Config (TOML Section):", Style(Color::Magenta, Color::None, true));
     std::cout << "  User: " << conf.get_string("database.user") << std::endl;
 
-    print("\nAuth Config (YAML Indent):", {.fg = Color::Yellow, .bold = true});
+    print("\nAuth Config (YAML Indent):", Style(Color::Yellow, Color::None, true));
     std::cout << "  JWT Secret: " << conf.get_string("auth.jwt.secret") << std::endl;
     std::cout << "  JWT Expiry: " << conf.get_int("auth.jwt.expiry") << std::endl;
 

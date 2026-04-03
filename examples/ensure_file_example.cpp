@@ -19,7 +19,7 @@ int main() {
 
     // 2. ensure_file 호출 (파일이 없으므로 생성됨)
     if (conf.ensure_file(path)) {
-        print("File 'generated_config.toml' was created with defaults!", {.fg = Color::Green});
+        print("File 'generated_config.toml' was created with defaults!", Style(Color::Green));
     }
 
     // 3. 다시 읽어보기 (이미 존재하므로 로드됨)
