@@ -8,6 +8,7 @@
 namespace wcppcli {
 
     void WConf::set(const std::string& key, ValueType value) { values_[key] = std::move(value); }
+    void WConf::set_cli(const std::string& key, ValueType value) { cli_values_[key] = std::move(value); }
     void WConf::set_env_prefix(const std::string& prefix) { env_prefix_ = prefix; }
     void WConf::bind_env(const std::string& key, const std::string& env_name) { env_bindings_[key] = env_name; }
 
@@ -160,32 +161,58 @@ namespace wcppcli {
         return val ? std::optional<std::string>(val) : std::nullopt;
     }
 
-    std::string WConf::get_string(const std::string& key) const {
+    std::optional<WConf::ValueType> WConf::get_raw_value(const std::string& key) const {
+        if (cli_values_.count(key)) return cli_values_.at(key);
         if (auto env = get_env_value(key)) return *env;
-        if (values_.count(key)) return std::get<std::string>(values_.at(key));
-        return "";
+        if (values_.count(key)) return values_.at(key);
+        return std::nullopt;
+    }
+
+    std::string WConf::get_string(const std::string& key) const {
+        auto val = get_raw_value(key);
+        if (!val) return "";
+        if (std::holds_alternative<std::string>(*val)) return std::get<std::string>(*val);
+        return ""; // 타입 불일치 시 빈 문자열
     }
 
     int WConf::get_int(const std::string& key) const {
-        if (auto env = get_env_value(key)) return std::stoi(*env);
-        if (values_.count(key)) {
-            auto val = values_.at(key);
-            if (std::holds_alternative<int>(val)) return std::get<int>(val);
-            if (std::holds_alternative<std::string>(val)) return std::stoi(std::get<std::string>(val));
+        auto val = get_raw_value(key);
+        if (!val) return 0;
+        if (std::holds_alternative<int>(*val)) return std::get<int>(*val);
+        if (std::holds_alternative<std::string>(*val)) {
+            try { return std::stoi(std::get<std::string>(*val)); } catch (...) { return 0; }
         }
         return 0;
     }
 
     bool WConf::get_bool(const std::string& key) const {
+        auto val = get_raw_value(key);
+        if (!val) return false;
+        if (std::holds_alternative<bool>(*val)) return std::get<bool>(*val);
+        
         std::string s;
-        if (auto env = get_env_value(key)) s = *env;
-        else if (values_.count(key)) {
-            auto val = values_.at(key);
-            if (std::holds_alternative<bool>(val)) return std::get<bool>(val);
-            if (std::holds_alternative<std::string>(val)) s = std::get<std::string>(val);
-        }
+        if (std::holds_alternative<std::string>(*val)) s = std::get<std::string>(*val);
+        else return false;
+
+        if (s.empty()) return false;
         std::transform(s.begin(), s.end(), s.begin(), ::tolower);
         return s == "true" || s == "1" || s == "yes";
+    }
+
+    void WConf::add_schema(const std::string& key, Validator validator, bool required) {
+        schemas_[key] = {validator, required};
+    }
+
+    bool WConf::validate() const {
+        for (const auto& [key, entry] : schemas_) {
+            auto val = get_raw_value(key);
+            if (!val) {
+                if (entry.required) return false;
+                continue;
+            }
+            if (entry.validator && !entry.validator(*val)) return false;
+        }
+        return true;
     }
 
 } // namespace wcppcli

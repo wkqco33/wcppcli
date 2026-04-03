@@ -10,6 +10,8 @@ add_library(wcppcli
     src/wstyle.cpp
     src/wcli.cpp
     src/wconf.cpp
+    src/wui.cpp
+    src/wlog.cpp
 )
 
 target_include_directories(wcppcli PUBLIC
@@ -29,3 +31,18 @@ target_link_libraries(example_nested PRIVATE wcppcli)
 
 add_executable(example_ensure examples/ensure_file_example.cpp)
 target_link_libraries(example_ensure PRIVATE wcppcli)
+
+add_executable(example_priority examples/priority_merge_example.cpp)
+target_link_libraries(example_priority PRIVATE wcppcli)
+
+add_executable(example_schema examples/schema_validation_example.cpp)
+target_link_libraries(example_schema PRIVATE wcppcli)
+
+add_executable(example_interactive examples/interactive_example.cpp)
+target_link_libraries(example_interactive PRIVATE wcppcli)
+
+add_executable(example_log examples/log_example.cpp)
+target_link_libraries(example_log PRIVATE wcppcli)
+
+add_executable(example_completion examples/completion_example.cpp)
+target_link_libraries(example_completion PRIVATE wcppcli)

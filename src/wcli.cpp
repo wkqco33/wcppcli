@@ -1,4 +1,5 @@
 #include "wcppcli/wcli.hpp"
+#include "wcppcli/wconf.hpp"
 #include "wcppcli/wstyle.hpp"
 #include <iostream>
 #include <iomanip>
@@ -32,13 +33,28 @@ namespace wcppcli {
                 for (auto& f : current->flags) {
                     if (f.name == name || (f.shorthand != 0 && std::string(1, f.shorthand) == name)) {
                         found = true;
-                        if (std::holds_alternative<bool*>(f.value_ptr)) { *std::get<bool*>(f.value_ptr) = true; f.changed = true; }
-                        else {
+                        if (std::holds_alternative<bool*>(f.value_ptr)) {
+                            *std::get<bool*>(f.value_ptr) = true;
+                            f.changed = true;
+                            if (current->conf_ptr && !f.config_key.empty()) current->conf_ptr->set_cli(f.config_key, true);
+                        } else {
                             if (!has_val && idx + 1 < raw_args.size()) { val = raw_args[++idx]; has_val = true; }
                             if (has_val) {
-                                if (std::holds_alternative<std::string*>(f.value_ptr)) *std::get<std::string*>(f.value_ptr) = val;
-                                else if (std::holds_alternative<int*>(f.value_ptr)) *std::get<int*>(f.value_ptr) = std::stoi(val);
+                                if (std::holds_alternative<std::string*>(f.value_ptr)) {
+                                    *std::get<std::string*>(f.value_ptr) = val;
+                                    if (current->conf_ptr && !f.config_key.empty()) current->conf_ptr->set_cli(f.config_key, val);
+                                } else if (std::holds_alternative<int*>(f.value_ptr)) {
+                                    int iv = std::stoi(val);
+                                    *std::get<int*>(f.value_ptr) = iv;
+                                    if (current->conf_ptr && !f.config_key.empty()) current->conf_ptr->set_cli(f.config_key, iv);
+                                } else if (std::holds_alternative<std::monostate>(f.value_ptr)) {
+                                     if (current->conf_ptr && !f.config_key.empty()) current->conf_ptr->set_cli(f.config_key, val);
+                                }
                                 f.changed = true;
+                            } else if (std::holds_alternative<std::monostate>(f.value_ptr)) {
+                                // 인자 없는 단독 플래그인 경우 (true로 간주하거나 그냥 changed만 표시)
+                                f.changed = true;
+                                if (current->conf_ptr && !f.config_key.empty()) current->conf_ptr->set_cli(f.config_key, true);
                             }
                         }
                         break;
@@ -48,7 +64,12 @@ namespace wcppcli {
             } else {
                 bool sub_found = false;
                 for (auto& cmd : current->subcommands) {
-                    if (cmd->name == arg) { current = cmd.get(); sub_found = true; break; }
+                    if (cmd->name == arg) {
+                        if (!cmd->conf_ptr) cmd->conf_ptr = current->conf_ptr; // 전파
+                        current = cmd.get();
+                        sub_found = true;
+                        break;
+                    }
                 }
                 if (!sub_found) { current->args.push_back(std::string(arg)); }
             }
@@ -79,6 +100,31 @@ namespace wcppcli {
             }
             std::cout << std::endl;
         }
+    }
+
+    std::string Command::generate_bash_completion() const {
+        std::string script = "_" + name + "_completion() {\n";
+        script += "    local cur opts\n";
+        script += "    COMPREPLY=()\n";
+        script += "    cur=\"${COMP_WORDS[COMP_CWORD]}\"\n";
+        
+        std::string opts;
+        for (const auto& cmd : subcommands) opts += cmd->name + " ";
+        for (const auto& f : flags) {
+            opts += "--" + f.name + " ";
+            if (f.shorthand != 0) {
+                opts += "-";
+                opts += f.shorthand;
+                opts += " ";
+            }
+        }
+        
+        script += "    opts=\"" + opts + "\"\n";
+        script += "    COMPREPLY=( $(compgen -W \"${opts}\" -- \"${cur}\") )\n";
+        script += "    return 0\n";
+        script += "}\n";
+        script += "complete -F _" + name + "_completion " + name + "\n";
+        return script;
     }
 
 } // namespace wcppcli

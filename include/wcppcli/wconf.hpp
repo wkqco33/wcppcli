@@ -4,12 +4,14 @@
 #include <map>
 #include <variant>
 #include <optional>
+#include <functional>
 
 namespace wcppcli {
 
     class WConf {
         public:
             using ValueType = std::variant<std::string, int, bool>;
+            using Validator = std::function<bool(const ValueType&)>;
 
             void set(const std::string& key, ValueType value);
             void set_env_prefix(const std::string& prefix);
@@ -24,10 +26,17 @@ namespace wcppcli {
             // 현재 설정을 파일로 저장
             bool write_file(const std::string& path);
 
+            // --- Schema Validation ---
+            void add_schema(const std::string& key, Validator validator = nullptr, bool required = false);
+            bool validate() const;
+
             // 신규 지원 형식 (중첩 구조 지원 강화)
             bool read_json(const std::string& path);
             bool read_toml(const std::string& path);
             bool read_yaml(const std::string& path);
+
+            // CLI 오버라이드 값 설정
+            void set_cli(const std::string& key, ValueType value);
 
             std::string get_string(const std::string& key) const;
             int get_int(const std::string& key) const;
@@ -35,10 +44,18 @@ namespace wcppcli {
 
         private:
             std::map<std::string, ValueType> values_;
+            std::map<std::string, ValueType> cli_values_;
             std::map<std::string, std::string> env_bindings_;
             std::string env_prefix_;
 
+            struct SchemaEntry {
+                Validator validator;
+                bool required;
+            };
+            std::map<std::string, SchemaEntry> schemas_;
+
             std::optional<std::string> get_env_value(const std::string& key) const;
+            std::optional<ValueType> get_raw_value(const std::string& key) const;
     };
 
 } // namespace wcppcli
