@@ -25,7 +25,7 @@ namespace wcppcli {
         std::string ext = path.substr(dot + 1);
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
         if (ext == "json") return read_json(path);
-        if (ext == "toml" || ext == "ini") return read_toml(path);
+        if (ext == "toml" || ext == "ini" || ext == "env") return read_toml(path);
         if (ext == "yaml" || ext == "yml") return read_yaml(path);
         return read_json(path);
     }
