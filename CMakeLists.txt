@@ -23,6 +23,10 @@ target_include_directories(wcppcli PUBLIC
 add_executable(example_full examples/full_example.cpp)
 target_link_libraries(example_full PRIVATE wcppcli)
 
+# CLI Generator Tool
+add_executable(wcli src/wcli_main.cpp)
+target_link_libraries(wcli PRIVATE wcppcli)
+
 add_executable(example_formats examples/config_formats_example.cpp)
 target_link_libraries(example_formats PRIVATE wcppcli)
 
