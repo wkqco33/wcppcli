@@ -94,8 +94,46 @@ static std::pair<std::string, std::string> detect_naming(const std::string& src_
     return {"cmd_", ""};
 }
 
+// ─── .wcli 설정 파일 ─────────────────────────────────────────────────────────
+
+static void write_wcli_config(const ProjectContext& ctx) {
+    std::ofstream f(".wcli");
+    f << "proj="                << ctx.proj_name        << "\n";
+    f << "src_cmd_dir="         << ctx.src_cmd_dir       << "\n";
+    f << "hdr_cmd_dir="         << ctx.hdr_cmd_dir       << "\n";
+    f << "hdr_include_path="    << ctx.hdr_include_path  << "\n";
+    f << "file_prefix="         << ctx.file_prefix       << "\n";
+    f << "file_suffix="         << ctx.file_suffix       << "\n";
+    f << "headers_with_source=" << (ctx.headers_with_source ? "1" : "0") << "\n";
+}
+
+static bool read_wcli_config(ProjectContext& ctx) {
+    if (!fs::exists(".wcli")) return false;
+    std::ifstream f(".wcli");
+    std::string line;
+    while (std::getline(f, line)) {
+        auto eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        std::string key = line.substr(0, eq);
+        std::string val = line.substr(eq + 1);
+        if      (key == "proj")                ctx.proj_name        = val;
+        else if (key == "src_cmd_dir")         ctx.src_cmd_dir       = val;
+        else if (key == "hdr_cmd_dir")         ctx.hdr_cmd_dir       = val;
+        else if (key == "hdr_include_path")    ctx.hdr_include_path  = val;
+        else if (key == "file_prefix")         ctx.file_prefix       = val;
+        else if (key == "file_suffix")         ctx.file_suffix       = val;
+        else if (key == "headers_with_source") ctx.headers_with_source = (val == "1");
+    }
+    return true;
+}
+
 static ProjectContext detect_project_context() {
     ProjectContext ctx;
+
+    // .wcli 가 있으면 우선 사용
+    if (read_wcli_config(ctx)) return ctx;
+
+    // ── 폴백: 디렉토리/파일 구조 분석 ─────────────────────────────────────────
     ctx.proj_name   = detect_proj_name();
     ctx.src_cmd_dir = detect_src_cmd_dir();
 
@@ -148,6 +186,7 @@ static ProjectContext detect_project_context() {
 
 // ─── 템플릿 ──────────────────────────────────────────────────────────────────
 
+// {inc_hint} = include 예시 경로 (e.g., "myapp/cmd_example.hpp" or "cmd_example.hpp")
 const char* MAIN_TEMPLATE = R"(#include "wcppcli/wcli.hpp"
 #include <iostream>
 
@@ -159,22 +198,24 @@ int main(int argc, char** argv) {
     root.description = "{proj} CLI Application";
 
     // TODO: Add subcommands here
-    // #include "{proj}/cmd_example.hpp"
+    // #include "{inc_hint}"
     // root.add_command(create_example_cmd());
 
     return root.execute(argc, argv);
 }
 )";
 
+// {inc_dir}  = include 디렉토리 (e.g., "include" or "src")
+// {src_glob} = GLOB 패턴 (e.g., "src/commands/*.cpp")
 const char* CMAKE_TEMPLATE = R"(cmake_minimum_required(VERSION 3.10)
 project({proj} VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-include_directories(include)
+include_directories({inc_dir})
 
-file(GLOB_RECURSE COMMAND_SOURCES src/commands/*.cpp)
+file(GLOB_RECURSE COMMAND_SOURCES {src_glob})
 set(SOURCES src/main.cpp ${COMMAND_SOURCES})
 
 add_executable({proj} ${SOURCES})
@@ -245,26 +286,88 @@ int main(int argc, char** argv) {
     auto init_cmd = std::make_unique<Command>();
     init_cmd->name = "init";
     init_cmd->description = "Initialize a structured wcppcli project";
-    init_cmd->handler = [](const Command& cmd) {
+    init_cmd->usage = "wcli init [project-name] [--style default|cmds|flat]";
+
+    std::string init_style = "default";
+    Flag style_flag;
+    style_flag.name        = "style";
+    style_flag.shorthand   = 's';
+    style_flag.description = "Project layout style: default, cmds, flat";
+    style_flag.value_ptr   = &init_style;
+    init_cmd->add_flag(style_flag);
+
+    init_cmd->handler = [&init_style](const Command& cmd) {
         std::string proj = cmd.args.empty() ? "myapp" : cmd.args[0];
 
-        fs::create_directories("src/commands");
-        fs::create_directories("include/" + proj);
+        // ── 스타일별 파라미터 ─────────────────────────────────────────────────
+        std::string src_cmd_dir, cmake_glob, cmake_inc_dir, inc_hint;
+        bool hdr_with_src = false;
 
+        if (init_style == "default") {
+            src_cmd_dir   = "src/commands";
+            cmake_glob    = "src/commands/*.cpp";
+            cmake_inc_dir = "include";
+            inc_hint      = proj + "/cmd_example.hpp";
+        } else if (init_style == "cmds") {
+            src_cmd_dir   = "src/cmds";
+            cmake_glob    = "src/cmds/*.cpp";
+            cmake_inc_dir = "include";
+            inc_hint      = proj + "/example_cmd.hpp";
+        } else if (init_style == "flat") {
+            src_cmd_dir   = "src";
+            cmake_glob    = "src/cmd_*.cpp";
+            cmake_inc_dir = "src";
+            inc_hint      = "cmd_example.hpp";
+            hdr_with_src  = true;
+        } else {
+            std::cerr << "Unknown style: " << init_style << ". Available: default, cmds, flat\n";
+            return;
+        }
+
+        // ── 디렉토리 생성 ──────────────────────────────────────────────────────
+        fs::create_directories(src_cmd_dir);
+        if (!hdr_with_src) fs::create_directories("include/" + proj);
+        // src/main.cpp 상위 폴더 보장
+        fs::create_directories("src");
+
+        // ── CMakeLists.txt ─────────────────────────────────────────────────────
         {
+            std::string cmake = CMAKE_TEMPLATE;
+            cmake = replace_all(cmake, "{proj}",     proj);
+            cmake = replace_all(cmake, "{src_glob}", cmake_glob);
+            cmake = replace_all(cmake, "{inc_dir}",  cmake_inc_dir);
             std::ofstream f("CMakeLists.txt");
-            f << replace_all(CMAKE_TEMPLATE, "{proj}", proj);
-        }
-        {
-            std::ofstream f("src/main.cpp");
-            f << replace_all(MAIN_TEMPLATE, "{proj}", proj);
+            f << cmake;
         }
 
-        std::cout << "Initialized: " << proj << "\n";
-        std::cout << "  src/commands/\n";
-        std::cout << "  include/" << proj << "/\n";
+        // ── src/main.cpp ───────────────────────────────────────────────────────
+        {
+            std::string main_src = MAIN_TEMPLATE;
+            main_src = replace_all(main_src, "{proj}",     proj);
+            main_src = replace_all(main_src, "{inc_hint}", inc_hint);
+            std::ofstream f("src/main.cpp");
+            f << main_src;
+        }
+
+        // ── .wcli 설정 파일 기록 ──────────────────────────────────────────────
+        {
+            ProjectContext ctx;
+            ctx.proj_name        = proj;
+            ctx.src_cmd_dir      = src_cmd_dir;
+            ctx.hdr_include_path = hdr_with_src ? "" : proj;
+            ctx.hdr_cmd_dir      = hdr_with_src ? src_cmd_dir : ("include/" + proj);
+            ctx.file_prefix      = (init_style == "cmds") ? "" : "cmd_";
+            ctx.file_suffix      = (init_style == "cmds") ? "_cmd" : "";
+            ctx.headers_with_source = hdr_with_src;
+            write_wcli_config(ctx);
+        }
+
+        std::cout << "Initialized: " << proj << " (style: " << init_style << ")\n";
+        std::cout << "  " << src_cmd_dir << "/\n";
+        if (!hdr_with_src) std::cout << "  include/" << proj << "/\n";
         std::cout << "  CMakeLists.txt\n";
         std::cout << "  src/main.cpp\n";
+        std::cout << "  .wcli\n";
     };
 
     // ── add ───────────────────────────────────────────────────────────────────
