@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 #include <regex>
+#include <algorithm>
+#include <iomanip>
 
 namespace fs = std::filesystem;
 using namespace wcppcli;
@@ -358,6 +360,80 @@ static bool inject_into_main(const std::string& hdr_inc,
     return true;
 }
 
+// src/main.cpp 에서 #include 와 add_command() 제거
+static bool eject_from_main(const std::string& hdr_inc,
+                              const std::string& fn_name,
+                              bool dry_run) {
+    const std::string main_path = "src/main.cpp";
+    if (!fs::exists(main_path)) {
+        std::cerr << "Warning: " << main_path << " not found, skipping --eject\n";
+        return false;
+    }
+
+    std::vector<std::string> lines;
+    {
+        std::ifstream f(main_path);
+        if (!f.is_open()) { std::cerr << "Error: cannot read " << main_path << "\n"; return false; }
+        std::string line;
+        while (std::getline(f, line)) lines.push_back(line);
+    }
+
+    std::string include_stmt    = "#include \"" + hdr_inc + "\"";
+    std::string register_substr = fn_name + "()";
+
+    std::vector<std::string> result;
+    bool removed_inc = false, removed_reg = false;
+    for (const auto& l : lines) {
+        if (!removed_inc && l.find(include_stmt) != std::string::npos)
+            { removed_inc = true; continue; }
+        if (!removed_reg && l.find(register_substr) != std::string::npos)
+            { removed_reg = true; continue; }
+        result.push_back(l);
+    }
+
+    if (!removed_inc && !removed_reg) {
+        std::cerr << "  Warning: nothing to eject from " << main_path << "\n";
+        return false;
+    }
+
+    if (dry_run) {
+        std::cout << "\n[preview] " << main_path << " (after eject):\n";
+        std::cout << std::string(44, '-') << "\n";
+        for (const auto& l : result) std::cout << l << "\n";
+        std::cout << std::string(44, '-') << "\n";
+        return true;
+    }
+
+    std::ofstream f(main_path);
+    if (!f.is_open()) { std::cerr << "Error: cannot write " << main_path << "\n"; return false; }
+    for (const auto& l : result) f << l << "\n";
+    std::cout << "  Ejected: " << main_path << "\n";
+    return true;
+}
+
+// ─── 공통 헬퍼 ───────────────────────────────────────────────────────────────
+
+// 파일 stem 에서 prefix/suffix 를 제거해 커맨드명 추출
+static std::string stem_to_cmd_name(const std::string& stem,
+                                     const std::string& prefix,
+                                     const std::string& suffix) {
+    std::string name = stem;
+    if (!prefix.empty() && name.rfind(prefix, 0) == 0)
+        name = name.substr(prefix.size());
+    if (!suffix.empty() && name.size() > suffix.size() &&
+        name.substr(name.size() - suffix.size()) == suffix)
+        name = name.substr(0, name.size() - suffix.size());
+    return name;
+}
+
+// main.cpp 전체를 문자열로 읽기 (등록 여부 확인용)
+static std::string read_main_content() {
+    std::ifstream f("src/main.cpp");
+    if (!f.is_open()) return "";
+    return std::string(std::istreambuf_iterator<char>(f),
+                       std::istreambuf_iterator<char>());
+}
+
 // ─── main ────────────────────────────────────────────────────────────────────
 
 int main(int argc, char** argv) {
@@ -481,53 +557,185 @@ int main(int argc, char** argv) {
             std::cerr << "Error: command name required.\n";
             return;
         }
-        const std::string cmd_name = cmd.args[0];
+
         ProjectContext ctx = detect_project_context();
-
-        std::string file_stem = ctx.file_prefix + cmd_name + ctx.file_suffix;
-        std::string fn_name   = "create_" + cmd_name + "_cmd";
-        std::string hdr_inc   = ctx.headers_with_source
-                                    ? (file_stem + ".hpp")
-                                    : (ctx.hdr_include_path + "/" + file_stem + ".hpp");
-
-        std::string hpp_path = ctx.hdr_cmd_dir + "/" + file_stem + ".hpp";
-        std::string cpp_path = ctx.src_cmd_dir + "/" + file_stem + ".cpp";
+        bool multi = cmd.args.size() > 1;
 
         std::cout << "Project : " << ctx.proj_name << "\n";
         std::cout << "src dir : " << ctx.src_cmd_dir << "\n";
         std::cout << "hdr dir : " << ctx.hdr_cmd_dir << "\n";
-        std::cout << "naming  : " << file_stem << ".{hpp,cpp}\n";
-        std::cout << "include : #include \"" << hdr_inc << "\"\n";
         if (do_inject) std::cout << "inject  : src/main.cpp\n";
         if (dry_run)   std::cout << "[dry-run mode]\n";
         std::cout << "\n";
 
         if (!dry_run) {
-            if (fs::exists(hpp_path) || fs::exists(cpp_path)) {
-                std::cerr << "Error: files already exist.\n";
-                return;
-            }
             fs::create_directories(ctx.src_cmd_dir);
             if (!ctx.headers_with_source) fs::create_directories(ctx.hdr_cmd_dir);
         }
 
-        std::string hpp_content = apply_cmd_template(CMD_HPP_TEMPLATE, hdr_inc, file_stem, fn_name, cmd_name);
-        std::string cpp_content = apply_cmd_template(CMD_CPP_TEMPLATE, hdr_inc, file_stem, fn_name, cmd_name);
+        std::vector<std::pair<std::string,std::string>> hints; // hdr_inc, fn_name
 
-        if (!write_or_preview(hpp_path, hpp_content, dry_run)) return;
-        if (!write_or_preview(cpp_path, cpp_content, dry_run)) return;
+        for (const auto& cmd_name : cmd.args) {
+            std::string file_stem = ctx.file_prefix + cmd_name + ctx.file_suffix;
+            std::string fn_name   = "create_" + cmd_name + "_cmd";
+            std::string hdr_inc   = ctx.headers_with_source
+                                        ? (file_stem + ".hpp")
+                                        : (ctx.hdr_include_path + "/" + file_stem + ".hpp");
+            std::string hpp_path  = ctx.hdr_cmd_dir + "/" + file_stem + ".hpp";
+            std::string cpp_path  = ctx.src_cmd_dir + "/" + file_stem + ".cpp";
 
-        if (do_inject || dry_run) {
-            inject_into_main(hdr_inc, fn_name, dry_run);
-        } else {
-            std::cout << "\nAdd to main.cpp:\n";
-            std::cout << "  #include \"" << hdr_inc << "\"\n";
-            std::cout << "  root.add_command(" << fn_name << "());\n";
+            if (multi) std::cout << "[" << cmd_name << "]\n";
+            else {
+                std::cout << "naming  : " << file_stem << ".{hpp,cpp}\n";
+                std::cout << "include : #include \"" << hdr_inc << "\"\n\n";
+            }
+
+            if (!dry_run && (fs::exists(hpp_path) || fs::exists(cpp_path))) {
+                std::cerr << "  Error: " << cmd_name << " files already exist, skipping.\n\n";
+                continue;
+            }
+
+            std::string hpp_c = apply_cmd_template(CMD_HPP_TEMPLATE, hdr_inc, file_stem, fn_name, cmd_name);
+            std::string cpp_c = apply_cmd_template(CMD_CPP_TEMPLATE, hdr_inc, file_stem, fn_name, cmd_name);
+
+            if (!write_or_preview(hpp_path, hpp_c, dry_run)) continue;
+            if (!write_or_preview(cpp_path, cpp_c, dry_run)) continue;
+
+            if (do_inject || dry_run) {
+                inject_into_main(hdr_inc, fn_name, dry_run);
+            } else {
+                hints.emplace_back(hdr_inc, fn_name);
+            }
+            if (multi) std::cout << "\n";
+        }
+
+        if (!hints.empty()) {
+            std::cout << "Add to main.cpp:\n";
+            for (const auto& [inc, fn] : hints) {
+                std::cout << "  #include \"" << inc << "\"\n";
+                std::cout << "  root.add_command(" << fn << "());\n";
+            }
+        }
+    };
+
+    // ── list ──────────────────────────────────────────────────────────────────
+    auto list_cmd = std::make_unique<Command>();
+    list_cmd->name = "list";
+    list_cmd->description = "List all commands in the project";
+    list_cmd->handler = [](const Command&) {
+        ProjectContext ctx = detect_project_context();
+
+        std::cout << "Project : " << ctx.proj_name << "\n";
+        std::cout << "src dir : " << ctx.src_cmd_dir << "\n";
+        std::cout << "hdr dir : " << ctx.hdr_cmd_dir << "\n\n";
+
+        if (!fs::exists(ctx.src_cmd_dir)) {
+            std::cout << "No commands found.\n";
+            return;
+        }
+
+        std::string main_content = read_main_content();
+
+        struct CmdEntry { std::string name, cpp, hpp; bool registered; };
+        std::vector<CmdEntry> entries;
+
+        for (const auto& e : fs::directory_iterator(ctx.src_cmd_dir)) {
+            if (e.path().extension() != ".cpp") continue;
+            std::string stem     = e.path().stem().string();
+            std::string cmd_name = stem_to_cmd_name(stem, ctx.file_prefix, ctx.file_suffix);
+            std::string hpp_path = ctx.hdr_cmd_dir + "/" + stem + ".hpp";
+            std::string fn_name  = "create_" + cmd_name + "_cmd";
+            bool reg = !main_content.empty() &&
+                       main_content.find(fn_name + "()") != std::string::npos;
+            entries.push_back({cmd_name, e.path().string(), hpp_path, reg});
+        }
+
+        if (entries.empty()) { std::cout << "No commands found.\n"; return; }
+
+        std::sort(entries.begin(), entries.end(),
+                  [](const auto& a, const auto& b){ return a.name < b.name; });
+
+        std::cout << "Commands (" << entries.size() << "):\n";
+        for (const auto& en : entries) {
+            std::cout << "  " << std::left << std::setw(16) << en.name
+                      << std::setw(38) << en.cpp
+                      << (fs::exists(en.hpp) ? en.hpp : "(no header)")
+                      << (en.registered ? "  [registered]" : "  [not registered]")
+                      << "\n";
+        }
+    };
+
+    // ── remove ────────────────────────────────────────────────────────────────
+    auto rm_cmd = std::make_unique<Command>();
+    rm_cmd->name = "remove";
+    rm_cmd->description = "Remove a subcommand and its files";
+
+    bool rm_dry_run = false;
+    Flag rm_dry_flag;
+    rm_dry_flag.name        = "dry-run";
+    rm_dry_flag.shorthand   = 'n';
+    rm_dry_flag.description = "Show what would be deleted without making any changes";
+    rm_dry_flag.value_ptr   = &rm_dry_run;
+    rm_cmd->add_flag(rm_dry_flag);
+
+    bool rm_eject = false;
+    Flag rm_eject_flag;
+    rm_eject_flag.name        = "eject";
+    rm_eject_flag.shorthand   = 'e';
+    rm_eject_flag.description = "Also remove include and add_command from src/main.cpp";
+    rm_eject_flag.value_ptr   = &rm_eject;
+    rm_cmd->add_flag(rm_eject_flag);
+
+    rm_cmd->handler = [&rm_dry_run, &rm_eject](const Command& cmd) {
+        if (cmd.args.empty()) {
+            std::cerr << "Error: command name required.\n";
+            return;
+        }
+
+        ProjectContext ctx = detect_project_context();
+
+        std::cout << "Project : " << ctx.proj_name << "\n";
+        std::cout << "src dir : " << ctx.src_cmd_dir << "\n";
+        if (rm_eject) std::cout << "eject   : src/main.cpp\n";
+        if (rm_dry_run) std::cout << "[dry-run mode]\n";
+        std::cout << "\n";
+
+        for (const auto& cmd_name : cmd.args) {
+            std::string file_stem = ctx.file_prefix + cmd_name + ctx.file_suffix;
+            std::string fn_name   = "create_" + cmd_name + "_cmd";
+            std::string hdr_inc   = ctx.headers_with_source
+                                        ? (file_stem + ".hpp")
+                                        : (ctx.hdr_include_path + "/" + file_stem + ".hpp");
+            std::string hpp_path  = ctx.hdr_cmd_dir + "/" + file_stem + ".hpp";
+            std::string cpp_path  = ctx.src_cmd_dir + "/" + file_stem + ".cpp";
+
+            bool hpp_exists = fs::exists(hpp_path);
+            bool cpp_exists = fs::exists(cpp_path);
+
+            if (cmd.args.size() > 1) std::cout << "[" << cmd_name << "]\n";
+
+            if (!hpp_exists && !cpp_exists) {
+                std::cerr << "  Warning: no files found for '" << cmd_name << "', skipping.\n\n";
+                continue;
+            }
+
+            if (rm_dry_run) {
+                if (hpp_exists) std::cout << "  [preview] delete: " << hpp_path << "\n";
+                if (cpp_exists) std::cout << "  [preview] delete: " << cpp_path << "\n";
+                if (rm_eject)   eject_from_main(hdr_inc, fn_name, true);
+            } else {
+                if (hpp_exists) { fs::remove(hpp_path); std::cout << "  Deleted: " << hpp_path << "\n"; }
+                if (cpp_exists) { fs::remove(cpp_path); std::cout << "  Deleted: " << cpp_path << "\n"; }
+                if (rm_eject)   eject_from_main(hdr_inc, fn_name, false);
+            }
+            std::cout << "\n";
         }
     };
 
     root.add_command(std::move(init_cmd));
     root.add_command(std::move(add_cmd));
+    root.add_command(std::move(list_cmd));
+    root.add_command(std::move(rm_cmd));
 
     return root.execute(argc, argv);
 }
