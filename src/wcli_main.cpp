@@ -96,8 +96,9 @@ static std::pair<std::string, std::string> detect_naming(const std::string& src_
 
 // ─── .wcli 설정 파일 ─────────────────────────────────────────────────────────
 
-static void write_wcli_config(const ProjectContext& ctx) {
+static bool write_wcli_config(const ProjectContext& ctx) {
     std::ofstream f(".wcli");
+    if (!f.is_open()) { std::cerr << "Error: cannot write .wcli\n"; return false; }
     f << "proj="                << ctx.proj_name        << "\n";
     f << "src_cmd_dir="         << ctx.src_cmd_dir       << "\n";
     f << "hdr_cmd_dir="         << ctx.hdr_cmd_dir       << "\n";
@@ -105,26 +106,39 @@ static void write_wcli_config(const ProjectContext& ctx) {
     f << "file_prefix="         << ctx.file_prefix       << "\n";
     f << "file_suffix="         << ctx.file_suffix       << "\n";
     f << "headers_with_source=" << (ctx.headers_with_source ? "1" : "0") << "\n";
+    return true;
 }
 
+// 현재 디렉토리부터 루트까지 .wcli 탐색 후 해당 디렉토리로 이동
 static bool read_wcli_config(ProjectContext& ctx) {
-    if (!fs::exists(".wcli")) return false;
-    std::ifstream f(".wcli");
-    std::string line;
-    while (std::getline(f, line)) {
-        auto eq = line.find('=');
-        if (eq == std::string::npos) continue;
-        std::string key = line.substr(0, eq);
-        std::string val = line.substr(eq + 1);
-        if      (key == "proj")                ctx.proj_name        = val;
-        else if (key == "src_cmd_dir")         ctx.src_cmd_dir       = val;
-        else if (key == "hdr_cmd_dir")         ctx.hdr_cmd_dir       = val;
-        else if (key == "hdr_include_path")    ctx.hdr_include_path  = val;
-        else if (key == "file_prefix")         ctx.file_prefix       = val;
-        else if (key == "file_suffix")         ctx.file_suffix       = val;
-        else if (key == "headers_with_source") ctx.headers_with_source = (val == "1");
+    fs::path dir = fs::current_path();
+    while (true) {
+        fs::path wcli = dir / ".wcli";
+        if (fs::exists(wcli)) {
+            if (dir != fs::current_path()) fs::current_path(dir);
+            std::ifstream f(wcli);
+            if (!f.is_open()) return false;
+            std::string line;
+            while (std::getline(f, line)) {
+                auto eq = line.find('=');
+                if (eq == std::string::npos) continue;
+                std::string key = line.substr(0, eq);
+                std::string val = line.substr(eq + 1);
+                if      (key == "proj")                ctx.proj_name           = val;
+                else if (key == "src_cmd_dir")         ctx.src_cmd_dir         = val;
+                else if (key == "hdr_cmd_dir")         ctx.hdr_cmd_dir         = val;
+                else if (key == "hdr_include_path")    ctx.hdr_include_path    = val;
+                else if (key == "file_prefix")         ctx.file_prefix         = val;
+                else if (key == "file_suffix")         ctx.file_suffix         = val;
+                else if (key == "headers_with_source") ctx.headers_with_source = (val == "1");
+            }
+            return true;
+        }
+        fs::path parent = dir.parent_path();
+        if (parent == dir) break; // 루트 도달
+        dir = parent;
     }
-    return true;
+    return false;
 }
 
 static ProjectContext detect_project_context() {
@@ -264,15 +278,84 @@ static std::string apply_cmd_template(const char* tmpl,
     return s;
 }
 
-static void write_or_preview(const std::string& path, const std::string& content, bool dry_run) {
+static bool write_or_preview(const std::string& path, const std::string& content, bool dry_run) {
     if (dry_run) {
         std::cout << "\n[preview] " << path << ":\n";
         std::cout << std::string(44, '-') << "\n" << content << std::string(44, '-') << "\n";
-    } else {
-        std::ofstream f(path);
-        f << content;
-        std::cout << "  Created: " << path << "\n";
+        return true;
     }
+    std::ofstream f(path);
+    if (!f.is_open()) { std::cerr << "Error: cannot write " << path << "\n"; return false; }
+    f << content;
+    std::cout << "  Created: " << path << "\n";
+    return true;
+}
+
+// src/main.cpp 에 #include 와 root.add_command() 를 자동 삽입
+static bool inject_into_main(const std::string& hdr_inc,
+                              const std::string& fn_name,
+                              bool dry_run) {
+    const std::string main_path = "src/main.cpp";
+    if (!fs::exists(main_path)) {
+        std::cerr << "Warning: " << main_path << " not found, skipping --inject\n";
+        return false;
+    }
+
+    std::vector<std::string> lines;
+    {
+        std::ifstream f(main_path);
+        if (!f.is_open()) { std::cerr << "Error: cannot read " << main_path << "\n"; return false; }
+        std::string line;
+        while (std::getline(f, line)) lines.push_back(line);
+    }
+
+    std::string include_stmt  = "#include \"" + hdr_inc + "\"";
+    std::string register_stmt = "    root.add_command(" + fn_name + "());";
+
+    // 중복 체크
+    for (const auto& l : lines) {
+        if (l.find(include_stmt) != std::string::npos) {
+            std::cerr << "Warning: " << include_stmt << " already in " << main_path << "\n";
+            return false;
+        }
+    }
+
+    // 마지막 #include 위치 탐색 (파일 앞부분)
+    int last_include_idx = -1;
+    for (int i = 0; i < (int)lines.size(); i++)
+        if (lines[i].rfind("#include", 0) == 0) last_include_idx = i;
+
+    // .execute( 위치 탐색 → add_command 삽입 지점
+    int execute_idx = -1;
+    for (int i = 0; i < (int)lines.size(); i++) {
+        if (lines[i].find(".execute(") != std::string::npos) { execute_idx = i; break; }
+    }
+    if (execute_idx == -1) {
+        std::cerr << "Warning: .execute() not found in " << main_path << ", skipping --inject\n";
+        return false;
+    }
+
+    // add_command 삽입 (.execute 앞)
+    lines.insert(lines.begin() + execute_idx, register_stmt);
+    // execute_idx 는 last_include_idx 보다 뒤이므로 인덱스 유지
+
+    // #include 삽입 (마지막 include 다음 줄)
+    int insert_inc = (last_include_idx != -1) ? last_include_idx + 1 : 0;
+    lines.insert(lines.begin() + insert_inc, include_stmt);
+
+    if (dry_run) {
+        std::cout << "\n[preview] " << main_path << " (after inject):\n";
+        std::cout << std::string(44, '-') << "\n";
+        for (const auto& l : lines) std::cout << l << "\n";
+        std::cout << std::string(44, '-') << "\n";
+        return true;
+    }
+
+    std::ofstream f(main_path);
+    if (!f.is_open()) { std::cerr << "Error: cannot write " << main_path << "\n"; return false; }
+    for (const auto& l : lines) f << l << "\n";
+    std::cout << "  Injected: " << main_path << "\n";
+    return true;
 }
 
 // ─── main ────────────────────────────────────────────────────────────────────
@@ -337,6 +420,7 @@ int main(int argc, char** argv) {
             cmake = replace_all(cmake, "{src_glob}", cmake_glob);
             cmake = replace_all(cmake, "{inc_dir}",  cmake_inc_dir);
             std::ofstream f("CMakeLists.txt");
+            if (!f.is_open()) { std::cerr << "Error: cannot write CMakeLists.txt\n"; return; }
             f << cmake;
         }
 
@@ -346,6 +430,7 @@ int main(int argc, char** argv) {
             main_src = replace_all(main_src, "{proj}",     proj);
             main_src = replace_all(main_src, "{inc_hint}", inc_hint);
             std::ofstream f("src/main.cpp");
+            if (!f.is_open()) { std::cerr << "Error: cannot write src/main.cpp\n"; return; }
             f << main_src;
         }
 
@@ -383,7 +468,15 @@ int main(int argc, char** argv) {
     dry_flag.value_ptr   = &dry_run;
     add_cmd->add_flag(dry_flag);
 
-    add_cmd->handler = [&dry_run](const Command& cmd) {
+    bool do_inject = false;
+    Flag inject_flag;
+    inject_flag.name        = "inject";
+    inject_flag.shorthand   = 'i';
+    inject_flag.description = "Auto-inject include and add_command into src/main.cpp";
+    inject_flag.value_ptr   = &do_inject;
+    add_cmd->add_flag(inject_flag);
+
+    add_cmd->handler = [&dry_run, &do_inject](const Command& cmd) {
         if (cmd.args.empty()) {
             std::cerr << "Error: command name required.\n";
             return;
@@ -405,7 +498,8 @@ int main(int argc, char** argv) {
         std::cout << "hdr dir : " << ctx.hdr_cmd_dir << "\n";
         std::cout << "naming  : " << file_stem << ".{hpp,cpp}\n";
         std::cout << "include : #include \"" << hdr_inc << "\"\n";
-        if (dry_run) std::cout << "[dry-run mode - no files will be created]\n";
+        if (do_inject) std::cout << "inject  : src/main.cpp\n";
+        if (dry_run)   std::cout << "[dry-run mode]\n";
         std::cout << "\n";
 
         if (!dry_run) {
@@ -420,10 +514,12 @@ int main(int argc, char** argv) {
         std::string hpp_content = apply_cmd_template(CMD_HPP_TEMPLATE, hdr_inc, file_stem, fn_name, cmd_name);
         std::string cpp_content = apply_cmd_template(CMD_CPP_TEMPLATE, hdr_inc, file_stem, fn_name, cmd_name);
 
-        write_or_preview(hpp_path, hpp_content, dry_run);
-        write_or_preview(cpp_path, cpp_content, dry_run);
+        if (!write_or_preview(hpp_path, hpp_content, dry_run)) return;
+        if (!write_or_preview(cpp_path, cpp_content, dry_run)) return;
 
-        if (!dry_run) {
+        if (do_inject || dry_run) {
+            inject_into_main(hdr_inc, fn_name, dry_run);
+        } else {
             std::cout << "\nAdd to main.cpp:\n";
             std::cout << "  #include \"" << hdr_inc << "\"\n";
             std::cout << "  root.add_command(" << fn_name << "());\n";
