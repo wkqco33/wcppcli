@@ -36,8 +36,9 @@ int main() {
 
     if (conf.read_toml("config.toml")) {
         print("TOML Loaded:", Style(Color::Green, Color::None, true));
-        std::cout << "  Host: " << conf.get_string("host") << std::endl;
-        std::cout << "  Timeout: " << conf.get_int("timeout") << std::endl;
+        // config.toml의 [server] 섹션 아래 키는 "server.host"처럼 점 표기법으로 저장된다.
+        std::cout << "  Host: " << conf.get_string("server.host") << std::endl;
+        std::cout << "  Timeout: " << conf.get_int("server.timeout") << std::endl;
     }
 
     if (conf.read_yaml("config.yaml")) {
