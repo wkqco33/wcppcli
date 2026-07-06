@@ -7,6 +7,7 @@
 #include <vector>
 #include <regex>
 #include <algorithm>
+#include <map>
 
 namespace fs = std::filesystem;
 using namespace wcppcli;
@@ -58,42 +59,62 @@ static std::string detect_src_cmd_dir() {
     return "src/commands";
 }
 
-// 기존 .cpp 파일의 #include 디렉티브에서 헤더 경로 추출
+// src_dir 내 .cpp 파일들을 이름 순으로 정렬해 반환.
+// directory_iterator 의 순회 순서는 표준상 불특정(파일시스템 저장 순서 등에 따라 달라짐)하므로,
+// 감지 결과가 실행할 때마다 달라지지 않도록 정렬 후 처리한다.
+static std::vector<fs::path> sorted_cpp_files(const std::string& dir) {
+    std::vector<fs::path> files;
+    if (!fs::exists(dir)) return files;
+    for (const auto& e : fs::directory_iterator(dir))
+        if (e.path().extension() == ".cpp") files.push_back(e.path());
+    std::sort(files.begin(), files.end());
+    return files;
+}
+
+// 기존 .cpp 파일들의 #include 디렉티브에서 헤더 경로 추출 (다수결)
 static std::string detect_include_path_from_sources(const std::string& src_dir) {
-    if (!fs::exists(src_dir)) return "";
     std::regex re(R"re(#include\s+"([^"]+\.hpp)")re");
-    for (const auto& e : fs::directory_iterator(src_dir)) {
-        if (e.path().extension() != ".cpp") continue;
-        std::ifstream f(e.path());
+    std::map<std::string, int> votes;
+
+    for (const auto& path : sorted_cpp_files(src_dir)) {
+        std::ifstream f(path);
         std::string line;
         while (std::getline(f, line)) {
             std::smatch m;
             if (std::regex_search(line, m, re)) {
                 std::string inc = m[1].str();
                 auto slash = inc.rfind('/');
-                if (slash != std::string::npos) return inc.substr(0, slash);
-                // 슬래시 없음 → 헤더가 소스와 같은 위치
-                return "";
+                // 슬래시 없으면 헤더가 소스와 같은 위치("")
+                votes[slash != std::string::npos ? inc.substr(0, slash) : ""]++;
+                break;
             }
         }
     }
-    return "";
+
+    if (votes.empty()) return "";
+    return std::max_element(votes.begin(), votes.end(),
+                             [](const auto& a, const auto& b) { return a.second < b.second; })->first;
 }
 
-// 기존 파일명에서 prefix/suffix 감지
+// 기존 파일명에서 prefix/suffix 감지 (다수결)
 static std::pair<std::string, std::string> detect_naming(const std::string& src_dir) {
-    if (!fs::exists(src_dir)) return {"cmd_", ""};
-    for (const auto& e : fs::directory_iterator(src_dir)) {
-        if (e.path().extension() != ".cpp") continue;
-        std::string stem = e.path().stem().string();
-        if (stem.rfind("cmd_", 0) == 0)     return {"cmd_", ""};
-        if (stem.rfind("command_", 0) == 0)  return {"command_", ""};
-        if (stem.size() > 4 && stem.substr(stem.size() - 4) == "_cmd")     return {"", "_cmd"};
-        if (stem.size() > 8 && stem.substr(stem.size() - 8) == "_command") return {"", "_command"};
-        // 알 수 없는 패턴 → prefix/suffix 없음
-        return {"", ""};
+    auto files = sorted_cpp_files(src_dir);
+    if (files.empty()) return {"cmd_", ""};
+
+    std::map<std::pair<std::string, std::string>, int> votes;
+    for (const auto& path : files) {
+        std::string stem = path.stem().string();
+        std::pair<std::string, std::string> style;
+        if      (stem.rfind("cmd_", 0) == 0)                                    style = {"cmd_", ""};
+        else if (stem.rfind("command_", 0) == 0)                                style = {"command_", ""};
+        else if (stem.size() > 4 && stem.substr(stem.size() - 4) == "_cmd")     style = {"", "_cmd"};
+        else if (stem.size() > 8 && stem.substr(stem.size() - 8) == "_command") style = {"", "_command"};
+        else                                                                    style = {"", ""}; // 알 수 없는 패턴
+        votes[style]++;
     }
-    return {"cmd_", ""};
+
+    return std::max_element(votes.begin(), votes.end(),
+                             [](const auto& a, const auto& b) { return a.second < b.second; })->first;
 }
 
 // ─── .wcli 설정 파일 ─────────────────────────────────────────────────────────
