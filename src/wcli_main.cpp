@@ -611,8 +611,9 @@ int main(int argc, char** argv) {
                 std::cout << "include : #include \"" << hdr_inc << "\"\n\n";
             }
 
-            if (!dry_run && (fs::exists(hpp_path) || fs::exists(cpp_path))) {
-                std::cerr << "  Error: " << cmd_name << " files already exist, skipping.\n\n";
+            if (fs::exists(hpp_path) || fs::exists(cpp_path)) {
+                std::cerr << "  " << (dry_run ? "[preview] " : "")
+                          << "Error: " << cmd_name << " files already exist, skipping.\n\n";
                 continue;
             }
 
