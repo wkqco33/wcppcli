@@ -358,13 +358,17 @@ static bool inject_into_main(const std::string& hdr_inc,
         return false;
     }
 
-    // add_command 삽입 (.execute 앞)
-    lines.insert(lines.begin() + execute_idx, register_stmt);
-    // execute_idx 는 last_include_idx 보다 뒤이므로 인덱스 유지
-
-    // #include 삽입 (마지막 include 다음 줄)
+    // add_command 삽입 (.execute 앞), #include 삽입 (마지막 include 다음 줄).
+    // 두 삽입 지점 중 뒤쪽부터 삽입해야 앞쪽 삽입 인덱스가 밀리지 않는다.
+    // (보통 execute_idx가 더 뒤지만, 비정형 main.cpp에서는 반대일 수도 있어 순서를 매번 비교한다)
     int insert_inc = (last_include_idx != -1) ? last_include_idx + 1 : 0;
-    lines.insert(lines.begin() + insert_inc, include_stmt);
+    if (insert_inc <= execute_idx) {
+        lines.insert(lines.begin() + execute_idx, register_stmt);
+        lines.insert(lines.begin() + insert_inc, include_stmt);
+    } else {
+        lines.insert(lines.begin() + insert_inc, include_stmt);
+        lines.insert(lines.begin() + execute_idx, register_stmt);
+    }
 
     if (dry_run) {
         std::cout << "\n[preview] " << main_path << " (after inject):\n";
