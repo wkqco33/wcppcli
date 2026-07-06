@@ -18,7 +18,7 @@ namespace wcppcli {
         char shorthand = 0;
         std::string description;
         using ValueType = std::variant<std::monostate, std::string*, int*, bool*>;
-        ValueType value_ptr = std::monostate{};
+        ValueType value_ptr = std::monostate{}; // 가리키는 변수는 Command::execute() 호출 동안 살아있어야 함 (댕글링 포인터 주의)
         std::string config_key; // WConf와 연동할 키
         bool changed = false;
     };

@@ -30,7 +30,9 @@ namespace wcppcli {
             void add_schema(const std::string& key, Validator validator = nullptr, bool required = false);
             bool validate() const;
 
-            // 신규 지원 형식 (중첩 구조 지원 강화)
+            // 신규 지원 형식 (중첩 구조 지원 강화).
+            // 배열/인라인 객체/이스케이프 문자열은 지원하지 않는 경량 라인 기반 파서임에 유의.
+            // 값은 따옴표 유무와 true/false/숫자 형태를 보고 string/bool/int로 추론되어 저장됨.
             bool read_json(const std::string& path);
             bool read_toml(const std::string& path);
             bool read_yaml(const std::string& path);
@@ -54,6 +56,9 @@ namespace wcppcli {
             };
             std::map<std::string, SchemaEntry> schemas_;
 
+            // 환경 변수 값은 항상 string 타입으로 반환됨 (파일 값과 달리 타입 추론을 하지 않음).
+            // Validator에서 std::get<int>/std::get<bool>을 바로 쓰면 env로 채워진 값에 대해
+            // bad_variant_access가 날 수 있으니 std::holds_alternative로 먼저 확인할 것.
             std::optional<std::string> get_env_value(const std::string& key) const;
             std::optional<ValueType> get_raw_value(const std::string& key) const;
     };

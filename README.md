@@ -5,11 +5,11 @@ Go의 `cobra`, `viper` 그리고 Python의 `rich` 라이브러리에서 영감�
 ## 🚀 핵심 기능
 
 - **wcli (Command & Flag Parsing)**: 
-  - 계층형 명령어 구조와 타입 세이프한 플래그 파싱.
+  - 계층형 명령어 구조와 타입 세이프한 플래그 파싱. `Flag::value_ptr`가 가리키는 변수는 `Command::execute()` 호출이 끝날 때까지 살아있어야 함(댕글링 포인터 주의).
   - **설정값 우선순위 병합**: CLI 플래그 > 환경 변수 > 설정 파일 > 기본값 순의 계층적 설정 시스템.
   - **쉘 자동 완성**: Bash용 자동 완성 스크립트(`generate_bash_completion`) 생성 지원.
 - **wconf (Configuration Management)**: 
-  - **다양한 포맷 지원**: JSON, TOML, YAML, INI 형식을 자체 경량 파서로 처리.
+  - **다양한 포맷 지원**: JSON, TOML, YAML, INI 형식을 자체 경량 파서로 처리 (배열/인라인 객체/이스케이프 문자열은 미지원).
   - **중첩 구조 지원**: 점 표기법(`server.port`)을 통한 계층형 설정 관리.
   - **데이터 스키마 검증**: 필수 값 체크 및 사용자 정의 검증기(`Validator`)를 통한 무결성 검사.
 - **wstyle & wui (Terminal UI & Prompts)**: 
@@ -70,7 +70,9 @@ CLI 플래그와 환경 변수를 자동으로 병합하며, 데이터의 유효
 
 WConf conf;
 // 스키마 등록: 필수 값 여부 및 범위 검증
+// 환경 변수로 채워진 값은 항상 string이므로, std::get 전에 holds_alternative로 타입을 확인한다.
 conf.add_schema("port", [](const WConf::ValueType& v) {
+    if (!std::holds_alternative<int>(v)) return false;
     int p = std::get<int>(v);
     return p >= 1 && p <= 65535;
 }, true);
