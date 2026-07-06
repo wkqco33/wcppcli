@@ -2,7 +2,6 @@
 #include "wcppcli/wconf.hpp"
 #include "wcppcli/wstyle.hpp"
 #include <iostream>
-#include <iomanip>
 
 namespace wcppcli {
 
@@ -44,9 +43,14 @@ namespace wcppcli {
                                     *std::get<std::string*>(f.value_ptr) = val;
                                     if (current->conf_ptr && !f.config_key.empty()) current->conf_ptr->set_cli(f.config_key, val);
                                 } else if (std::holds_alternative<int*>(f.value_ptr)) {
-                                    int iv = std::stoi(val);
-                                    *std::get<int*>(f.value_ptr) = iv;
-                                    if (current->conf_ptr && !f.config_key.empty()) current->conf_ptr->set_cli(f.config_key, iv);
+                                    try {
+                                        int iv = std::stoi(val);
+                                        *std::get<int*>(f.value_ptr) = iv;
+                                        if (current->conf_ptr && !f.config_key.empty()) current->conf_ptr->set_cli(f.config_key, iv);
+                                    } catch (const std::exception&) {
+                                        std::cerr << "Error: invalid integer value for --" << f.name << ": \"" << val << "\"" << std::endl;
+                                        return 1;
+                                    }
                                 } else if (std::holds_alternative<std::monostate>(f.value_ptr)) {
                                      if (current->conf_ptr && !f.config_key.empty()) current->conf_ptr->set_cli(f.config_key, val);
                                 }
@@ -87,7 +91,7 @@ namespace wcppcli {
         std::cout << "  " << (usage.empty() ? (name + " [command] [flags] [args]") : usage) << std::endl << std::endl;
         if (!subcommands.empty()) {
             print("Available Commands:", Style(Color::Green, Color::None, true));
-            for (const auto& cmd : subcommands) std::cout << "  " << std::left << std::setw(15) << cmd->name << " " << cmd->description << std::endl;
+            for (const auto& cmd : subcommands) std::cout << "  " << pad_display(cmd->name, 15) << " " << cmd->description << std::endl;
             std::cout << std::endl;
         }
         if (!flags.empty()) {
@@ -96,7 +100,7 @@ namespace wcppcli {
                 std::string info = "  ";
                 if (f.shorthand != 0) { info += "-"; info += f.shorthand; info += ", "; }
                 info += "--"; info += f.name;
-                std::cout << std::left << std::setw(25) << info << " " << f.description << std::endl;
+                std::cout << pad_display(info, 25) << " " << f.description << std::endl;
             }
             std::cout << std::endl;
         }

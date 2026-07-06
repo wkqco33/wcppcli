@@ -24,6 +24,13 @@ namespace wcppcli {
     std::string format(std::string_view text, const Style& style);
     void print(std::string_view text, const Style& style = Style());
 
+    // UTF-8 문자열의 터미널 표시 폭 계산 (한글/CJK 등 넓은 문자는 2칸으로 계산).
+    // 정렬/패딩 계산 시 std::string::size() 대신 사용해야 함 (바이트 수 != 표시 폭).
+    size_t display_width(std::string_view text);
+
+    // text 를 display_width 기준 width 까지 공백으로 채운 문자열 반환
+    std::string pad_display(std::string_view text, size_t width);
+
     // --- Advanced UI Components ---
 
     struct Column {

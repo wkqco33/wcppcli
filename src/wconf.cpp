@@ -1,4 +1,5 @@
 #include "wcppcli/wconf.hpp"
+#include <cctype>
 #include <cstdlib>
 #include <algorithm>
 #include <fstream>
@@ -17,6 +18,28 @@ namespace wcppcli {
         if (start == std::string::npos) return "";
         auto end = s.find_last_not_of(" \t\r\n\",");
         return s.substr(start, end - start + 1);
+    }
+
+    // 따옴표로 감싸인 값은 문자열로, "true"/"false"는 bool로, 숫자는 int로 추론.
+    // 파일에서 읽은 값도 CLI/코드로 직접 set()한 값과 동일한 타입을 갖도록 하기 위함.
+    static WConf::ValueType parse_scalar(const std::string& raw) {
+        auto start = raw.find_first_not_of(" \t\r\n");
+        if (start == std::string::npos) return std::string("");
+        auto end = raw.find_last_not_of(" \t\r\n,");
+        std::string v = raw.substr(start, end - start + 1);
+
+        if (v.size() >= 2 && v.front() == '"' && v.back() == '"') return v.substr(1, v.size() - 2);
+        if (v == "true") return true;
+        if (v == "false") return false;
+        if (!v.empty()) {
+            size_t i = (v[0] == '-' || v[0] == '+') ? 1 : 0;
+            bool is_num = i < v.size();
+            for (size_t j = i; j < v.size(); ++j) if (!std::isdigit((unsigned char)v[j])) { is_num = false; break; }
+            if (is_num) {
+                try { return std::stoi(v); } catch (...) {}
+            }
+        }
+        return v;
     }
 
     bool WConf::read_file(const std::string& path) {
@@ -98,7 +121,7 @@ namespace wcppcli {
                     std::string full_key;
                     for (const auto& p : stack) full_key += p + ".";
                     full_key += k;
-                    values_[full_key] = trim(line.substr(colon + 1));
+                    values_[full_key] = parse_scalar(line.substr(colon + 1));
                 }
             }
         }
@@ -119,7 +142,7 @@ namespace wcppcli {
                 if (pos != std::string::npos) {
                     std::string k = trim(line.substr(0, pos));
                     std::string full_key = section.empty() ? k : section + "." + k;
-                    values_[full_key] = trim(line.substr(pos + 1));
+                    values_[full_key] = parse_scalar(line.substr(pos + 1));
                 }
             }
         }
@@ -137,13 +160,14 @@ namespace wcppcli {
             size_t colon = line.find(':');
             if (colon != std::string::npos) {
                 std::string k = trim(line.substr(indent, colon - indent));
-                std::string v = trim(line.substr(colon + 1));
+                std::string raw_v = line.substr(colon + 1);
+                std::string v = trim(raw_v); // 빈 값이면 중첩 매핑 헤더로 간주
                 while (!stack.empty() && stack.back().first >= indent) stack.pop_back();
                 std::string full_key;
                 for (const auto& p : stack) full_key += p.second + ".";
                 full_key += k;
                 if (v.empty()) stack.push_back({indent, k});
-                else values_[full_key] = v;
+                else values_[full_key] = parse_scalar(raw_v);
             }
         }
         return true;

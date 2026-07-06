@@ -1,4 +1,5 @@
 #include "wcppcli/wcli.hpp"
+#include "wcppcli/wstyle.hpp"
 #include <iostream>
 #include <fstream>
 #include <filesystem>
@@ -6,7 +7,6 @@
 #include <vector>
 #include <regex>
 #include <algorithm>
-#include <iomanip>
 
 namespace fs = std::filesystem;
 using namespace wcppcli;
@@ -657,8 +657,8 @@ int main(int argc, char** argv) {
 
         std::cout << "Commands (" << entries.size() << "):\n";
         for (const auto& en : entries) {
-            std::cout << "  " << std::left << std::setw(16) << en.name
-                      << std::setw(38) << en.cpp
+            std::cout << "  " << pad_display(en.name, 16)
+                      << pad_display(en.cpp, 38)
                       << (fs::exists(en.hpp) ? en.hpp : "(no header)")
                       << (en.registered ? "  [registered]" : "  [not registered]")
                       << "\n";

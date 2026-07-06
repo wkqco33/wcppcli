@@ -29,13 +29,70 @@ namespace wcppcli {
 
     void print(std::string_view text, const Style& style) { std::cout << format(text, style) << std::endl; }
 
+    namespace {
+        // UTF-8 한 글자를 디코딩하고 바이트 길이를 반환
+        size_t utf8_decode(std::string_view s, size_t i, char32_t& cp) {
+            unsigned char c = static_cast<unsigned char>(s[i]);
+            if (c < 0x80) { cp = c; return 1; }
+            if ((c & 0xE0) == 0xC0 && i + 1 < s.size()) {
+                cp = static_cast<char32_t>(c & 0x1F);
+                cp = (cp << 6) | (static_cast<unsigned char>(s[i + 1]) & 0x3F);
+                return 2;
+            }
+            if ((c & 0xF0) == 0xE0 && i + 2 < s.size()) {
+                cp = static_cast<char32_t>(c & 0x0F);
+                cp = (cp << 6) | (static_cast<unsigned char>(s[i + 1]) & 0x3F);
+                cp = (cp << 6) | (static_cast<unsigned char>(s[i + 2]) & 0x3F);
+                return 3;
+            }
+            if ((c & 0xF8) == 0xF0 && i + 3 < s.size()) {
+                cp = static_cast<char32_t>(c & 0x07);
+                cp = (cp << 6) | (static_cast<unsigned char>(s[i + 1]) & 0x3F);
+                cp = (cp << 6) | (static_cast<unsigned char>(s[i + 2]) & 0x3F);
+                cp = (cp << 6) | (static_cast<unsigned char>(s[i + 3]) & 0x3F);
+                return 4;
+            }
+            cp = c; // 잘못된 시퀀스: 1바이트로 취급
+            return 1;
+        }
+
+        // 동아시아 넓은 문자 범위(한글/CJK/가나 등) 대략적 판별
+        bool is_wide(char32_t cp) {
+            return (cp >= 0x1100 && cp <= 0x115F) ||
+                   (cp >= 0x2E80 && cp <= 0xA4CF && cp != 0x303F) ||
+                   (cp >= 0xAC00 && cp <= 0xD7A3) ||
+                   (cp >= 0xF900 && cp <= 0xFAFF) ||
+                   (cp >= 0xFF00 && cp <= 0xFF60) ||
+                   (cp >= 0xFFE0 && cp <= 0xFFE6) ||
+                   (cp >= 0x20000 && cp <= 0x3FFFD);
+        }
+    } // namespace
+
+    size_t display_width(std::string_view text) {
+        size_t width = 0;
+        size_t i = 0;
+        while (i < text.size()) {
+            char32_t cp;
+            i += utf8_decode(text, i, cp);
+            width += is_wide(cp) ? 2 : 1;
+        }
+        return width;
+    }
+
+    std::string pad_display(std::string_view text, size_t width) {
+        std::string result(text);
+        size_t w = display_width(text);
+        if (w < width) result += std::string(width - w, ' ');
+        return result;
+    }
+
     // --- Table ---
     void Table::add_column(const std::string& h, const Style& hs, const Style& cs) { columns_.push_back({h, hs, cs, h.size()}); }
     void Table::add_row(const std::vector<std::string>& row) { rows_.push_back(row); }
     void Table::update_widths() {
         for (size_t i = 0; i < columns_.size(); ++i) {
-            columns_[i].width = std::max(columns_[i].width, columns_[i].header.size());
-            for (const auto& row : rows_) if (i < row.size()) columns_[i].width = std::max(columns_[i].width, row[i].size());
+            columns_[i].width = std::max(columns_[i].width, display_width(columns_[i].header));
+            for (const auto& row : rows_) if (i < row.size()) columns_[i].width = std::max(columns_[i].width, display_width(row[i]));
         }
     }
     void Table::render() const {
@@ -47,14 +104,14 @@ namespace wcppcli {
         };
         border();
         std::cout << "|";
-        for (const auto& col : columns_) std::cout << " " << format(col.header, col.header_style) << std::string(col.width - col.header.size(), ' ') << " |";
+        for (const auto& col : columns_) std::cout << " " << format(col.header, col.header_style) << std::string(col.width - display_width(col.header), ' ') << " |";
         std::cout << std::endl;
         border();
         for (const auto& row : rows_) {
             std::cout << "|";
             for (size_t i = 0; i < columns_.size(); ++i) {
                 std::string text = (i < row.size()) ? row[i] : "";
-                std::cout << " " << format(text, columns_[i].cell_style) << std::string(columns_[i].width - text.size(), ' ') << " |";
+                std::cout << " " << format(text, columns_[i].cell_style) << std::string(columns_[i].width - display_width(text), ' ') << " |";
             }
             std::cout << std::endl;
         }
@@ -75,22 +132,22 @@ namespace wcppcli {
         size_t max_content_width = 0;
         while (std::getline(iss, line)) {
             lines.push_back(line);
-            max_content_width = std::max(max_content_width, line.size());
+            max_content_width = std::max(max_content_width, display_width(line));
         }
 
         if (lines.empty()) {
             lines.push_back("");
         }
 
-        size_t width = std::max(title.size() + 2, max_content_width) + 2;
-        
+        size_t width = std::max(display_width(title) + 2, max_content_width) + 2;
+
         // 상단 테두리
-        std::string top_border = " " + title + " " + std::string(width - title.size() - 2, '-');
+        std::string top_border = " " + title + " " + std::string(width - display_width(title) - 2, '-');
         std::cout << format("+" + top_border + "+", border_style) << std::endl;
 
         // 내용 출력
         for (const auto& l : lines) {
-            std::cout << format("| ", border_style) << l << std::string(width - l.size() - 1, ' ') << format("|", border_style) << std::endl;
+            std::cout << format("| ", border_style) << l << std::string(width - display_width(l) - 1, ' ') << format("|", border_style) << std::endl;
         }
 
         // 하단 테두리
