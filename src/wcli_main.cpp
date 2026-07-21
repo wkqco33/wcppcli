@@ -1,5 +1,6 @@
 #include "wcppcli/wcli.hpp"
 #include "wcppcli/wstyle.hpp"
+#include "wcppcli/wlog.hpp"
 #include <iostream>
 #include <fstream>
 #include <filesystem>
@@ -8,6 +9,7 @@
 #include <regex>
 #include <algorithm>
 #include <map>
+#include <optional>
 
 namespace fs = std::filesystem;
 using namespace wcppcli;
@@ -31,6 +33,26 @@ static std::string replace_all(std::string str, const std::string& from, const s
         pos += to.length();
     }
     return str;
+}
+
+// ─── 파일 I/O 공통 헬퍼 ──────────────────────────────────────────────────────
+// 아래 두 헬퍼는 반복되던 "열고 실패하면 에러 출력" 패턴을 한 곳으로 모은 것으로,
+// 실패 시 항상 WLog::error 를 통해 일관된 형식으로 보고한다.
+
+static bool write_file_or_log(const std::string& path, const std::string& content) {
+    std::ofstream f(path);
+    if (!f.is_open()) { WLog::error("cannot write " + path); return false; }
+    f << content;
+    return true;
+}
+
+static std::optional<std::vector<std::string>> read_lines_or_log(const std::string& path) {
+    std::ifstream f(path);
+    if (!f.is_open()) { WLog::error("cannot read " + path); return std::nullopt; }
+    std::vector<std::string> lines;
+    std::string line;
+    while (std::getline(f, line)) lines.push_back(line);
+    return lines;
 }
 
 static std::string detect_proj_name() {
@@ -120,16 +142,15 @@ static std::pair<std::string, std::string> detect_naming(const std::string& src_
 // ─── .wcli 설정 파일 ─────────────────────────────────────────────────────────
 
 static bool write_wcli_config(const ProjectContext& ctx) {
-    std::ofstream f(".wcli");
-    if (!f.is_open()) { std::cerr << "Error: cannot write .wcli\n"; return false; }
-    f << "proj="                << ctx.proj_name        << "\n";
-    f << "src_cmd_dir="         << ctx.src_cmd_dir       << "\n";
-    f << "hdr_cmd_dir="         << ctx.hdr_cmd_dir       << "\n";
-    f << "hdr_include_path="    << ctx.hdr_include_path  << "\n";
-    f << "file_prefix="         << ctx.file_prefix       << "\n";
-    f << "file_suffix="         << ctx.file_suffix       << "\n";
-    f << "headers_with_source=" << (ctx.headers_with_source ? "1" : "0") << "\n";
-    return true;
+    std::string content;
+    content += "proj="                + ctx.proj_name        + "\n";
+    content += "src_cmd_dir="         + ctx.src_cmd_dir       + "\n";
+    content += "hdr_cmd_dir="         + ctx.hdr_cmd_dir       + "\n";
+    content += "hdr_include_path="    + ctx.hdr_include_path  + "\n";
+    content += "file_prefix="         + ctx.file_prefix       + "\n";
+    content += "file_suffix="         + ctx.file_suffix       + "\n";
+    content += std::string("headers_with_source=") + (ctx.headers_with_source ? "1" : "0") + "\n";
+    return write_file_or_log(".wcli", content);
 }
 
 // 현재 디렉토리부터 루트까지 .wcli 탐색 후 해당 디렉토리로 이동
@@ -281,6 +302,7 @@ std::unique_ptr<Command> {fn}() {
     cmd->description = "{cmd} command description";
     cmd->handler = [](const Command& c) {
         std::cout << "{cmd} command executed!" << std::endl;
+        return 0;
     };
     return cmd;
 }
@@ -307,9 +329,7 @@ static bool write_or_preview(const std::string& path, const std::string& content
         std::cout << std::string(44, '-') << "\n" << content << std::string(44, '-') << "\n";
         return true;
     }
-    std::ofstream f(path);
-    if (!f.is_open()) { std::cerr << "Error: cannot write " << path << "\n"; return false; }
-    f << content;
+    if (!write_file_or_log(path, content)) return false;
     std::cout << "  Created: " << path << "\n";
     return true;
 }
@@ -320,17 +340,13 @@ static bool inject_into_main(const std::string& hdr_inc,
                               bool dry_run) {
     const std::string main_path = "src/main.cpp";
     if (!fs::exists(main_path)) {
-        std::cerr << "Warning: " << main_path << " not found, skipping --inject\n";
+        WLog::warn(main_path + " not found, skipping --inject");
         return false;
     }
 
-    std::vector<std::string> lines;
-    {
-        std::ifstream f(main_path);
-        if (!f.is_open()) { std::cerr << "Error: cannot read " << main_path << "\n"; return false; }
-        std::string line;
-        while (std::getline(f, line)) lines.push_back(line);
-    }
+    auto maybe_lines = read_lines_or_log(main_path);
+    if (!maybe_lines) return false;
+    std::vector<std::string> lines = std::move(*maybe_lines);
 
     std::string include_stmt  = "#include \"" + hdr_inc + "\"";
     std::string register_stmt = "    root.add_command(" + fn_name + "());";
@@ -338,7 +354,7 @@ static bool inject_into_main(const std::string& hdr_inc,
     // 중복 체크
     for (const auto& l : lines) {
         if (l.find(include_stmt) != std::string::npos) {
-            std::cerr << "Warning: " << include_stmt << " already in " << main_path << "\n";
+            WLog::warn(include_stmt + " already in " + main_path);
             return false;
         }
     }
@@ -354,7 +370,7 @@ static bool inject_into_main(const std::string& hdr_inc,
         if (lines[i].find(".execute(") != std::string::npos) { execute_idx = i; break; }
     }
     if (execute_idx == -1) {
-        std::cerr << "Warning: .execute() not found in " << main_path << ", skipping --inject\n";
+        WLog::warn(".execute() not found in " + main_path + ", skipping --inject");
         return false;
     }
 
@@ -378,9 +394,9 @@ static bool inject_into_main(const std::string& hdr_inc,
         return true;
     }
 
-    std::ofstream f(main_path);
-    if (!f.is_open()) { std::cerr << "Error: cannot write " << main_path << "\n"; return false; }
-    for (const auto& l : lines) f << l << "\n";
+    std::string content;
+    for (const auto& l : lines) content += l + "\n";
+    if (!write_file_or_log(main_path, content)) return false;
     std::cout << "  Injected: " << main_path << "\n";
     return true;
 }
@@ -391,17 +407,13 @@ static bool eject_from_main(const std::string& hdr_inc,
                               bool dry_run) {
     const std::string main_path = "src/main.cpp";
     if (!fs::exists(main_path)) {
-        std::cerr << "Warning: " << main_path << " not found, skipping --eject\n";
+        WLog::warn(main_path + " not found, skipping --eject");
         return false;
     }
 
-    std::vector<std::string> lines;
-    {
-        std::ifstream f(main_path);
-        if (!f.is_open()) { std::cerr << "Error: cannot read " << main_path << "\n"; return false; }
-        std::string line;
-        while (std::getline(f, line)) lines.push_back(line);
-    }
+    auto maybe_lines = read_lines_or_log(main_path);
+    if (!maybe_lines) return false;
+    std::vector<std::string> lines = std::move(*maybe_lines);
 
     std::string include_stmt    = "#include \"" + hdr_inc + "\"";
     std::string register_substr = fn_name + "()";
@@ -417,7 +429,7 @@ static bool eject_from_main(const std::string& hdr_inc,
     }
 
     if (!removed_inc && !removed_reg) {
-        std::cerr << "  Warning: nothing to eject from " << main_path << "\n";
+        WLog::warn("nothing to eject from " + main_path);
         return false;
     }
 
@@ -429,9 +441,9 @@ static bool eject_from_main(const std::string& hdr_inc,
         return true;
     }
 
-    std::ofstream f(main_path);
-    if (!f.is_open()) { std::cerr << "Error: cannot write " << main_path << "\n"; return false; }
-    for (const auto& l : result) f << l << "\n";
+    std::string content;
+    for (const auto& l : result) content += l + "\n";
+    if (!write_file_or_log(main_path, content)) return false;
     std::cout << "  Ejected: " << main_path << "\n";
     return true;
 }
@@ -480,7 +492,7 @@ int main(int argc, char** argv) {
     style_flag.value_ptr   = &init_style;
     init_cmd->add_flag(style_flag);
 
-    init_cmd->handler = [&init_style](const Command& cmd) {
+    init_cmd->handler = [&init_style](const Command& cmd) -> int {
         std::string proj = cmd.args.empty() ? "myapp" : cmd.args[0];
 
         // ── 스타일별 파라미터 ─────────────────────────────────────────────────
@@ -504,8 +516,8 @@ int main(int argc, char** argv) {
             inc_hint      = "cmd_example.hpp";
             hdr_with_src  = true;
         } else {
-            std::cerr << "Unknown style: " << init_style << ". Available: default, cmds, flat\n";
-            return;
+            WLog::error("unknown style: " + init_style + ". Available: default, cmds, flat");
+            return 1;
         }
 
         // ── 디렉토리 생성 ──────────────────────────────────────────────────────
@@ -520,9 +532,7 @@ int main(int argc, char** argv) {
             cmake = replace_all(cmake, "{proj}",     proj);
             cmake = replace_all(cmake, "{src_glob}", cmake_glob);
             cmake = replace_all(cmake, "{inc_dir}",  cmake_inc_dir);
-            std::ofstream f("CMakeLists.txt");
-            if (!f.is_open()) { std::cerr << "Error: cannot write CMakeLists.txt\n"; return; }
-            f << cmake;
+            if (!write_file_or_log("CMakeLists.txt", cmake)) return 1;
         }
 
         // ── src/main.cpp ───────────────────────────────────────────────────────
@@ -530,9 +540,7 @@ int main(int argc, char** argv) {
             std::string main_src = MAIN_TEMPLATE;
             main_src = replace_all(main_src, "{proj}",     proj);
             main_src = replace_all(main_src, "{inc_hint}", inc_hint);
-            std::ofstream f("src/main.cpp");
-            if (!f.is_open()) { std::cerr << "Error: cannot write src/main.cpp\n"; return; }
-            f << main_src;
+            if (!write_file_or_log("src/main.cpp", main_src)) return 1;
         }
 
         // ── .wcli 설정 파일 기록 ──────────────────────────────────────────────
@@ -545,7 +553,7 @@ int main(int argc, char** argv) {
             ctx.file_prefix      = (init_style == "cmds") ? "" : "cmd_";
             ctx.file_suffix      = (init_style == "cmds") ? "_cmd" : "";
             ctx.headers_with_source = hdr_with_src;
-            write_wcli_config(ctx);
+            if (!write_wcli_config(ctx)) return 1;
         }
 
         std::cout << "Initialized: " << proj << " (style: " << init_style << ")\n";
@@ -554,6 +562,7 @@ int main(int argc, char** argv) {
         std::cout << "  CMakeLists.txt\n";
         std::cout << "  src/main.cpp\n";
         std::cout << "  .wcli\n";
+        return 0;
     };
 
     // ── add ───────────────────────────────────────────────────────────────────
@@ -577,10 +586,10 @@ int main(int argc, char** argv) {
     inject_flag.value_ptr   = &do_inject;
     add_cmd->add_flag(inject_flag);
 
-    add_cmd->handler = [&dry_run, &do_inject](const Command& cmd) {
+    add_cmd->handler = [&dry_run, &do_inject](const Command& cmd) -> int {
         if (cmd.args.empty()) {
-            std::cerr << "Error: command name required.\n";
-            return;
+            WLog::error("command name required.");
+            return 1;
         }
 
         ProjectContext ctx = detect_project_context();
@@ -599,6 +608,7 @@ int main(int argc, char** argv) {
         }
 
         std::vector<std::pair<std::string,std::string>> hints; // hdr_inc, fn_name
+        bool had_error = false;
 
         for (const auto& cmd_name : cmd.args) {
             std::string file_stem = ctx.file_prefix + cmd_name + ctx.file_suffix;
@@ -616,16 +626,17 @@ int main(int argc, char** argv) {
             }
 
             if (fs::exists(hpp_path) || fs::exists(cpp_path)) {
-                std::cerr << "  " << (dry_run ? "[preview] " : "")
-                          << "Error: " << cmd_name << " files already exist, skipping.\n\n";
+                WLog::error(std::string(dry_run ? "[preview] " : "") + cmd_name + " files already exist, skipping.");
+                std::cout << "\n";
+                had_error = true;
                 continue;
             }
 
             std::string hpp_c = apply_cmd_template(CMD_HPP_TEMPLATE, hdr_inc, file_stem, fn_name, cmd_name);
             std::string cpp_c = apply_cmd_template(CMD_CPP_TEMPLATE, hdr_inc, file_stem, fn_name, cmd_name);
 
-            if (!write_or_preview(hpp_path, hpp_c, dry_run)) continue;
-            if (!write_or_preview(cpp_path, cpp_c, dry_run)) continue;
+            if (!write_or_preview(hpp_path, hpp_c, dry_run)) { had_error = true; continue; }
+            if (!write_or_preview(cpp_path, cpp_c, dry_run)) { had_error = true; continue; }
 
             if (do_inject || dry_run) {
                 inject_into_main(hdr_inc, fn_name, dry_run);
@@ -642,13 +653,14 @@ int main(int argc, char** argv) {
                 std::cout << "  root.add_command(" << fn << "());\n";
             }
         }
+        return had_error ? 1 : 0;
     };
 
     // ── list ──────────────────────────────────────────────────────────────────
     auto list_cmd = std::make_unique<Command>();
     list_cmd->name = "list";
     list_cmd->description = "List all commands in the project";
-    list_cmd->handler = [](const Command&) {
+    list_cmd->handler = [](const Command&) -> int {
         ProjectContext ctx = detect_project_context();
 
         std::cout << "Project : " << ctx.proj_name << "\n";
@@ -657,7 +669,7 @@ int main(int argc, char** argv) {
 
         if (!fs::exists(ctx.src_cmd_dir)) {
             std::cout << "No commands found.\n";
-            return;
+            return 0;
         }
 
         std::string main_content = read_main_content();
@@ -676,7 +688,7 @@ int main(int argc, char** argv) {
             entries.push_back({cmd_name, e.path().string(), hpp_path, reg});
         }
 
-        if (entries.empty()) { std::cout << "No commands found.\n"; return; }
+        if (entries.empty()) { std::cout << "No commands found.\n"; return 0; }
 
         std::sort(entries.begin(), entries.end(),
                   [](const auto& a, const auto& b){ return a.name < b.name; });
@@ -689,6 +701,7 @@ int main(int argc, char** argv) {
                       << (en.registered ? "  [registered]" : "  [not registered]")
                       << "\n";
         }
+        return 0;
     };
 
     // ── remove ────────────────────────────────────────────────────────────────
@@ -712,10 +725,10 @@ int main(int argc, char** argv) {
     rm_eject_flag.value_ptr   = &rm_eject;
     rm_cmd->add_flag(rm_eject_flag);
 
-    rm_cmd->handler = [&rm_dry_run, &rm_eject](const Command& cmd) {
+    rm_cmd->handler = [&rm_dry_run, &rm_eject](const Command& cmd) -> int {
         if (cmd.args.empty()) {
-            std::cerr << "Error: command name required.\n";
-            return;
+            WLog::error("command name required.");
+            return 1;
         }
 
         ProjectContext ctx = detect_project_context();
@@ -725,6 +738,8 @@ int main(int argc, char** argv) {
         if (rm_eject) std::cout << "eject   : src/main.cpp\n";
         if (rm_dry_run) std::cout << "[dry-run mode]\n";
         std::cout << "\n";
+
+        bool had_error = false;
 
         for (const auto& cmd_name : cmd.args) {
             std::string file_stem = ctx.file_prefix + cmd_name + ctx.file_suffix;
@@ -741,7 +756,9 @@ int main(int argc, char** argv) {
             if (cmd.args.size() > 1) std::cout << "[" << cmd_name << "]\n";
 
             if (!hpp_exists && !cpp_exists) {
-                std::cerr << "  Warning: no files found for '" << cmd_name << "', skipping.\n\n";
+                WLog::warn("no files found for '" + cmd_name + "', skipping.");
+                std::cout << "\n";
+                had_error = true;
                 continue;
             }
 
@@ -756,6 +773,7 @@ int main(int argc, char** argv) {
             }
             std::cout << "\n";
         }
+        return had_error ? 1 : 0;
     };
 
     root.add_command(std::move(init_cmd));

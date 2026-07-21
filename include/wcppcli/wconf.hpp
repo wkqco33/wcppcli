@@ -2,6 +2,7 @@
 
 #include <string>
 #include <map>
+#include <vector>
 #include <variant>
 #include <optional>
 #include <functional>
@@ -10,7 +11,7 @@ namespace wcppcli {
 
     class WConf {
         public:
-            using ValueType = std::variant<std::string, int, bool>;
+            using ValueType = std::variant<std::string, int, bool, std::vector<std::string>>;
             using Validator = std::function<bool(const ValueType&)>;
 
             void set(const std::string& key, ValueType value);
@@ -27,12 +28,20 @@ namespace wcppcli {
             bool write_file(const std::string& path);
 
             // --- Schema Validation ---
+            struct ValidationError {
+                std::string key;
+                std::string reason; // "missing required key" 또는 "validator rejected value"
+            };
+
             void add_schema(const std::string& key, Validator validator = nullptr, bool required = false);
-            bool validate() const;
+            bool validate() const; // validate_errors().empty() 와 동일
+            std::vector<ValidationError> validate_errors() const;
 
             // 신규 지원 형식 (중첩 구조 지원 강화).
-            // 배열/인라인 객체/이스케이프 문자열은 지원하지 않는 경량 라인 기반 파서임에 유의.
+            // 인라인 객체/이스케이프 문자열은 지원하지 않는 경량 라인 기반 파서임에 유의.
             // 값은 따옴표 유무와 true/false/숫자 형태를 보고 string/bool/int로 추론되어 저장됨.
+            // 배열은 `["a", "b"]` 형태의 한 줄짜리 인라인 문자열 배열만 지원하며(get_array),
+            // 여러 줄에 걸친 YAML block-style 리스트(`- item`)는 지원하지 않음.
             bool read_json(const std::string& path);
             bool read_toml(const std::string& path);
             bool read_yaml(const std::string& path);
@@ -43,6 +52,7 @@ namespace wcppcli {
             std::string get_string(const std::string& key) const;
             int get_int(const std::string& key) const;
             bool get_bool(const std::string& key) const;
+            std::vector<std::string> get_array(const std::string& key) const; // 값이 없거나 배열이 아니면 빈 벡터
 
         private:
             std::map<std::string, ValueType> values_;

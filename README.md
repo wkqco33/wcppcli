@@ -9,7 +9,7 @@ Go의 `cobra`, `viper` 그리고 Python의 `rich` 라이브러리에서 영감�
   - **설정값 우선순위 병합**: CLI 플래그 > 환경 변수 > 설정 파일 > 기본값 순의 계층적 설정 시스템.
   - **쉘 자동 완성**: Bash용 자동 완성 스크립트(`generate_bash_completion`) 생성 지원.
 - **wconf (Configuration Management)**: 
-  - **다양한 포맷 지원**: JSON, TOML, YAML, INI 형식을 자체 경량 파서로 처리 (배열/인라인 객체/이스케이프 문자열은 미지원).
+  - **다양한 포맷 지원**: JSON, TOML, YAML, INI 형식을 자체 경량 파서로 처리 (한 줄짜리 인라인 문자열 배열은 지원하며, 인라인 객체/이스케이프 문자열/여러 줄 배열은 미지원).
   - **중첩 구조 지원**: 점 표기법(`server.port`)을 통한 계층형 설정 관리.
   - **데이터 스키마 검증**: 필수 값 체크 및 사용자 정의 검증기(`Validator`)를 통한 무결성 검사.
 - **wstyle & wui (Terminal UI & Prompts)**: 
@@ -58,6 +58,17 @@ make wcli
 mkdir build && cd build
 cmake ..
 make
+```
+
+## ✅ 테스트
+
+외부 테스트 프레임워크 없이 자체 초경량 하네스(`tests/test_framework.hpp`)로 작성된
+단위 테스트가 있습니다. `WCPPCLI_BUILD_TESTS`(최상위 빌드 시 기본 ON)로 빌드/실행합니다.
+
+```bash
+cmake -S . -B build -DWCPPCLI_BUILD_TESTS=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
 ```
 
 ## 📖 라이브러리 사용 가이드

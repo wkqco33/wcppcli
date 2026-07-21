@@ -55,6 +55,7 @@ int main(int argc, char** argv) {
         } else {
             print("Using default value: 8080", Style(Color::Yellow));
         }
+        return 0;
     };
 
     return root.execute(argc, argv);

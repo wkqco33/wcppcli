@@ -21,7 +21,7 @@ namespace wcppcli {
         }
 
         LogLevel parse_min_level_from_env() {
-            const char* raw = std::getenv("HOMECLICPP_LOG_LEVEL");
+            const char* raw = std::getenv("WCPPCLI_LOG_LEVEL");
             if (raw == nullptr) {
                 return LogLevel::Info;
             }
@@ -50,9 +50,11 @@ namespace wcppcli {
             return LogLevel::Info;
         }
 
+        // 호출마다 환경변수를 재평가한다 (캐싱하지 않음). 로그 호출은 핫패스가 아니므로
+        // 비용이 무시할 만한 수준이며, 테스트/서브프로세스에서 WCPPCLI_LOG_LEVEL을
+        // 바꿔가며 검증할 수 있어야 하기 때문.
         bool should_log(LogLevel level) {
-            static const LogLevel kMinLevel = parse_min_level_from_env();
-            return level_priority(level) >= level_priority(kMinLevel);
+            return level_priority(level) >= level_priority(parse_min_level_from_env());
         }
 
     } // namespace

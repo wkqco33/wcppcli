@@ -2,10 +2,27 @@
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
+#include <cstdlib>
+#ifdef _WIN32
+    #include <io.h>
+#else
+    #include <unistd.h>
+#endif
 
 namespace wcppcli {
 
+    bool color_enabled() {
+        if (std::getenv("NO_COLOR") != nullptr) return false; // https://no-color.org 관례: 값과 무관하게 비활성화
+        #ifdef _WIN32
+            return _isatty(_fileno(stdout)) != 0;
+        #else
+            return isatty(fileno(stdout)) != 0;
+        #endif
+    }
+
     std::string format(std::string_view text, const Style& style) {
+        if (!color_enabled()) return std::string(text);
+
         std::vector<int> codes;
         if (style.bold) codes.push_back(1);
         if (style.dim) codes.push_back(2);

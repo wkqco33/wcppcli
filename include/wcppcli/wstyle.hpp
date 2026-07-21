@@ -21,6 +21,10 @@ namespace wcppcli {
             : fg(f), bg(b), bold(bld) {}
     };
 
+    // NO_COLOR 환경변수 또는 비-tty stdout(파이프/리다이렉션) 여부에 따라 색상 출력 여부를 판단.
+    // 매 호출마다 재평가하며(캐싱하지 않음) format() 이 내부적으로 사용한다.
+    bool color_enabled();
+
     std::string format(std::string_view text, const Style& style);
     void print(std::string_view text, const Style& style = Style());
 

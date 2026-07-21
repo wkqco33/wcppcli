@@ -35,6 +35,7 @@ int main(int argc, char** argv) {
             print("\nExtra Arguments provided:", Style(Color::Yellow));
             for (const auto& arg : cmd.args) std::cout << " - " << arg << std::endl;
         }
+        return 0;
     };
 
     auto table_cmd = std::make_unique<Command>();
@@ -48,6 +49,7 @@ int main(int argc, char** argv) {
         t.add_row({"Lang", "C++17"});
         t.add_row({"Library", "wcppcli"});
         t.render();
+        return 0;
     };
 
     root.add_command(std::move(info_cmd));

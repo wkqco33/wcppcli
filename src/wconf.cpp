@@ -1,4 +1,5 @@
 #include "wcppcli/wconf.hpp"
+#include "wcppcli/wlog.hpp"
 #include <cctype>
 #include <cstdlib>
 #include <algorithm>
@@ -42,6 +43,36 @@ namespace wcppcli {
         return v;
     }
 
+    // 값이 `[`로 시작하는 한 줄짜리 인라인 배열이면 문자열 벡터로 파싱하고, 아니면 parse_scalar로 위임.
+    // 여러 줄에 걸친 배열은 지원하지 않는다(닫는 ']'가 같은 줄에 없으면 스칼라로 폴백).
+    static WConf::ValueType parse_array_or_scalar(const std::string& raw) {
+        auto start = raw.find_first_not_of(" \t\r\n");
+        if (start == std::string::npos) return std::string("");
+        if (raw[start] != '[') return parse_scalar(raw);
+
+        size_t close = raw.find(']', start);
+        if (close == std::string::npos) return parse_scalar(raw);
+
+        std::string inner = raw.substr(start + 1, close - start - 1);
+        std::vector<std::string> items;
+        std::stringstream ss(inner);
+        std::string item;
+        while (std::getline(ss, item, ',')) {
+            std::string trimmed = trim(item);
+            if (!trimmed.empty()) items.push_back(trimmed);
+        }
+        return items;
+    }
+
+    static void write_array(std::ostream& f, const std::vector<std::string>& arr) {
+        f << "[";
+        for (size_t i = 0; i < arr.size(); ++i) {
+            f << "\"" << arr[i] << "\"";
+            if (i + 1 < arr.size()) f << ", ";
+        }
+        f << "]";
+    }
+
     bool WConf::read_file(const std::string& path) {
         size_t dot = path.find_last_of('.');
         if (dot == std::string::npos) return read_json(path);
@@ -74,6 +105,7 @@ namespace wcppcli {
                 if (std::holds_alternative<std::string>(it->second)) f << "\"" << std::get<std::string>(it->second) << "\"";
                 else if (std::holds_alternative<int>(it->second)) f << std::get<int>(it->second);
                 else if (std::holds_alternative<bool>(it->second)) f << (std::get<bool>(it->second) ? "true" : "false");
+                else if (std::holds_alternative<std::vector<std::string>>(it->second)) write_array(f, std::get<std::vector<std::string>>(it->second));
                 if (std::next(it) != values_.end()) f << ",";
                 f << "\n";
             }
@@ -84,6 +116,7 @@ namespace wcppcli {
                 if (std::holds_alternative<std::string>(v)) f << "\"" << std::get<std::string>(v) << "\"\n";
                 else if (std::holds_alternative<int>(v)) f << std::get<int>(v) << "\n";
                 else if (std::holds_alternative<bool>(v)) f << (std::get<bool>(v) ? "true" : "false") << "\n";
+                else if (std::holds_alternative<std::vector<std::string>>(v)) { write_array(f, std::get<std::vector<std::string>>(v)); f << "\n"; }
             }
         } else if (ext == "yaml" || ext == "yml") {
             for (const auto& [k, v] : values_) {
@@ -91,6 +124,7 @@ namespace wcppcli {
                 if (std::holds_alternative<std::string>(v)) f << "\"" << std::get<std::string>(v) << "\"\n";
                 else if (std::holds_alternative<int>(v)) f << std::get<int>(v) << "\n";
                 else if (std::holds_alternative<bool>(v)) f << (std::get<bool>(v) ? "true" : "false") << "\n";
+                else if (std::holds_alternative<std::vector<std::string>>(v)) { write_array(f, std::get<std::vector<std::string>>(v)); f << "\n"; }
             }
         }
         return true;
@@ -121,7 +155,7 @@ namespace wcppcli {
                     std::string full_key;
                     for (const auto& p : stack) full_key += p + ".";
                     full_key += k;
-                    values_[full_key] = parse_scalar(line.substr(colon + 1));
+                    values_[full_key] = parse_array_or_scalar(line.substr(colon + 1));
                 }
             }
         }
@@ -142,7 +176,7 @@ namespace wcppcli {
                 if (pos != std::string::npos) {
                     std::string k = trim(line.substr(0, pos));
                     std::string full_key = section.empty() ? k : section + "." + k;
-                    values_[full_key] = parse_scalar(line.substr(pos + 1));
+                    values_[full_key] = parse_array_or_scalar(line.substr(pos + 1));
                 }
             }
         }
@@ -167,7 +201,7 @@ namespace wcppcli {
                 for (const auto& p : stack) full_key += p.second + ".";
                 full_key += k;
                 if (v.empty()) stack.push_back({indent, k});
-                else values_[full_key] = parse_scalar(raw_v);
+                else values_[full_key] = parse_array_or_scalar(raw_v);
             }
         }
         return true;
@@ -204,7 +238,11 @@ namespace wcppcli {
         if (!val) return 0;
         if (std::holds_alternative<int>(*val)) return std::get<int>(*val);
         if (std::holds_alternative<std::string>(*val)) {
-            try { return std::stoi(std::get<std::string>(*val)); } catch (...) { return 0; }
+            try { return std::stoi(std::get<std::string>(*val)); }
+            catch (...) {
+                WLog::warn("key '" + key + "' is not a valid integer, using 0");
+                return 0;
+            }
         }
         return 0;
     }
@@ -223,20 +261,34 @@ namespace wcppcli {
         return s == "true" || s == "1" || s == "yes";
     }
 
+    std::vector<std::string> WConf::get_array(const std::string& key) const {
+        auto val = get_raw_value(key);
+        if (!val) return {};
+        if (std::holds_alternative<std::vector<std::string>>(*val)) return std::get<std::vector<std::string>>(*val);
+        return {}; // 타입 불일치 시 빈 벡터
+    }
+
     void WConf::add_schema(const std::string& key, Validator validator, bool required) {
         schemas_[key] = {validator, required};
     }
 
-    bool WConf::validate() const {
+    std::vector<WConf::ValidationError> WConf::validate_errors() const {
+        std::vector<ValidationError> errors;
         for (const auto& [key, entry] : schemas_) {
             auto val = get_raw_value(key);
             if (!val) {
-                if (entry.required) return false;
+                if (entry.required) errors.push_back({key, "missing required key"});
                 continue;
             }
-            if (entry.validator && !entry.validator(*val)) return false;
+            if (entry.validator && !entry.validator(*val)) {
+                errors.push_back({key, "validator rejected value"});
+            }
         }
-        return true;
+        return errors;
+    }
+
+    bool WConf::validate() const {
+        return validate_errors().empty();
     }
 
 } // namespace wcppcli

@@ -16,6 +16,7 @@ endif()
 # being built (and their target names from leaking) into the parent project.
 option(WCPPCLI_BUILD_EXAMPLES "Build wcppcli example executables" ${WCPPCLI_IS_TOP_LEVEL})
 option(WCPPCLI_BUILD_TOOL "Build the wcli code-gen tool executable" ${WCPPCLI_IS_TOP_LEVEL})
+option(WCPPCLI_BUILD_TESTS "Build wcppcli unit tests" ${WCPPCLI_IS_TOP_LEVEL})
 
 # Library
 add_library(wcppcli
@@ -65,4 +66,18 @@ if(WCPPCLI_BUILD_EXAMPLES)
 
     add_executable(example_completion examples/completion_example.cpp)
     target_link_libraries(example_completion PRIVATE wcppcli)
+endif()
+
+if(WCPPCLI_BUILD_TESTS)
+    enable_testing()
+    add_executable(wcppcli_tests
+        tests/test_main.cpp
+        tests/test_wconf.cpp
+        tests/test_wcli.cpp
+        tests/test_wstyle.cpp
+        tests/test_wlog.cpp
+    )
+    target_include_directories(wcppcli_tests PRIVATE tests)
+    target_link_libraries(wcppcli_tests PRIVATE wcppcli)
+    add_test(NAME wcppcli_tests COMMAND wcppcli_tests)
 endif()
