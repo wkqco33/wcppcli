@@ -4,5 +4,9 @@
   "description": "Dependency-free C++17 CLI, configuration, terminal UI, and logging framework",
   "homepage": "https://github.com/wkqco33/wcppcli",
   "license": "MIT",
+  "dependencies": [
+    "vcpkg-cmake",
+    "vcpkg-cmake-config"
+  ],
   "supports": "!uwp"
 }

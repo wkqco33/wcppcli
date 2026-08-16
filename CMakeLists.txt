@@ -34,6 +34,10 @@ add_library(wcppcli
     src/wlog.cpp
 )
 
+if(WIN32)
+    set_target_properties(wcppcli PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
+
 target_include_directories(wcppcli PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
