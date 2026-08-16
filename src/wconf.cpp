@@ -1,4 +1,5 @@
 #include "wcppcli/wconf.hpp"
+#include "environment.hpp"
 #include "wcppcli/wlog.hpp"
 #include <cctype>
 #include <cstdlib>
@@ -186,11 +187,11 @@ namespace wcppcli {
     bool WConf::read_yaml(const std::string& path) {
         std::ifstream file(path);
         if (!file.is_open()) return false;
-        std::vector<std::pair<int, std::string>> stack;
+        std::vector<std::pair<size_t, std::string>> stack;
         std::string line;
         while (std::getline(file, line)) {
-            int indent = line.find_first_not_of(" \t");
-            if (indent == (int)std::string::npos || line[indent] == '#') continue;
+            size_t indent = line.find_first_not_of(" \t");
+            if (indent == std::string::npos || line[indent] == '#') continue;
             size_t colon = line.find(':');
             if (colon != std::string::npos) {
                 std::string k = trim(line.substr(indent, colon - indent));
@@ -215,8 +216,7 @@ namespace wcppcli {
             std::replace(env_name.begin(), env_name.end(), '.', '_');
             std::transform(env_name.begin(), env_name.end(), env_name.begin(), ::toupper);
         }
-        const char* val = std::getenv(env_name.c_str());
-        return val ? std::optional<std::string>(val) : std::nullopt;
+        return detail::read_environment_variable(env_name.c_str());
     }
 
     std::optional<WConf::ValueType> WConf::get_raw_value(const std::string& key) const {

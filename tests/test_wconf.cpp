@@ -56,7 +56,7 @@ TEST_CASE("wconf priority order is cli > env > file > default") {
     CHECK(conf.read_toml("test_wconf_priority.toml")); // file overrides default
     CHECK_EQ(conf.get_int("port"), 9090);
 
-    setenv("APP_PORT", "1010", 1);
+    wtest::set_env("APP_PORT", "1010");
     conf.set_env_prefix("APP");
     conf.bind_env("port", "APP_PORT");
     CHECK_EQ(conf.get_int("port"), 1010); // env overrides file
@@ -64,7 +64,7 @@ TEST_CASE("wconf priority order is cli > env > file > default") {
     conf.set_cli("port", 1212);
     CHECK_EQ(conf.get_int("port"), 1212); // cli overrides env
 
-    unsetenv("APP_PORT");
+    wtest::unset_env("APP_PORT");
     std::remove("test_wconf_priority.toml");
 }
 

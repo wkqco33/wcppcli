@@ -1,7 +1,7 @@
 #include "wcppcli/wlog.hpp"
+#include "environment.hpp"
 #include <algorithm>
 #include <cctype>
-#include <cstdlib>
 #include <iostream>
 #include <string>
 
@@ -21,12 +21,12 @@ namespace wcppcli {
         }
 
         LogLevel parse_min_level_from_env() {
-            const char* raw = std::getenv("WCPPCLI_LOG_LEVEL");
-            if (raw == nullptr) {
+            auto raw = detail::read_environment_variable("WCPPCLI_LOG_LEVEL");
+            if (!raw) {
                 return LogLevel::Info;
             }
 
-            std::string s(raw);
+            std::string s = *raw;
             std::transform(s.begin(), s.end(), s.begin(), [](unsigned char ch) {
                 return static_cast<char>(std::tolower(ch));
             });

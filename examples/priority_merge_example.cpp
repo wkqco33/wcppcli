@@ -23,7 +23,11 @@ int main(int argc, char** argv) {
 
     // 3. 환경 변수 바인딩 (우선순위 2)
     // 실제 환경 변수 설정 (WCONF_APP_PORT)
-    setenv("APP_PORT", "1010", 1);
+    #ifdef _WIN32
+        _putenv_s("APP_PORT", "1010");
+    #else
+        setenv("APP_PORT", "1010", 1);
+    #endif
     conf.set_env_prefix("APP");
     conf.bind_env("port", "APP_PORT");
 
