@@ -3,12 +3,29 @@
 // 외부 프레임워크(Catch2/doctest 등) 없이 TEST_CASE/CHECK/CHECK_EQ 만 제공한다.
 
 #include <functional>
+#include <cstdlib>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <vector>
 
 namespace wtest {
+
+    inline void set_env(const char* name, const char* value) {
+        #ifdef _WIN32
+            _putenv_s(name, value);
+        #else
+            setenv(name, value, 1);
+        #endif
+    }
+
+    inline void unset_env(const char* name) {
+        #ifdef _WIN32
+            _putenv_s(name, "");
+        #else
+            unsetenv(name);
+        #endif
+    }
 
     struct TestCase {
         std::string name;
@@ -36,9 +53,30 @@ namespace wtest {
         ++failure_count();
     }
 
-    inline int run_all() {
+    inline int run_all(int argc = 1, char** argv = nullptr) {
+        std::string filter;
+        bool list_only = false;
+        for (int i = 1; i < argc; ++i) {
+            std::string argument(argv[i]);
+            if (argument == "--list") {
+                list_only = true;
+            } else if (argument == "--filter" && i + 1 < argc) {
+                filter = argv[++i];
+            } else if (argument.rfind("--filter=", 0) == 0) {
+                filter = argument.substr(9);
+            }
+        }
+
+        if (list_only) {
+            for (const auto& t : registry()) {
+                std::cout << t.name << "\n";
+            }
+            return 0;
+        }
+
         int total = 0, before_all = failure_count();
         for (auto& t : registry()) {
+            if (!filter.empty() && t.name.find(filter) == std::string::npos) continue;
             int before = failure_count();
             std::cout << "[ RUN  ] " << t.name << "\n";
             t.fn();
@@ -46,6 +84,10 @@ namespace wtest {
             ++total;
         }
         int failed = failure_count() - before_all;
+        if (!filter.empty() && total == 0) {
+            std::cerr << "No test cases matched filter: " << filter << "\n";
+            return 1;
+        }
         std::cout << total << " test case(s) run, " << failed << " check failure(s)\n";
         return failed == 0 ? 0 : 1;
     }

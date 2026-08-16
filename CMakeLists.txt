@@ -1,9 +1,16 @@
 cmake_minimum_required(VERSION 3.10)
 project(wcppcli VERSION 0.1.0 LANGUAGES CXX)
 
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
 
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     set(WCPPCLI_IS_TOP_LEVEL ON)
@@ -80,4 +87,40 @@ if(WCPPCLI_BUILD_TESTS)
     target_include_directories(wcppcli_tests PRIVATE tests)
     target_link_libraries(wcppcli_tests PRIVATE wcppcli)
     add_test(NAME wcppcli_tests COMMAND wcppcli_tests)
+    set_tests_properties(wcppcli_tests PROPERTIES LABELS "unit")
 endif()
+
+install(TARGETS wcppcli
+    EXPORT wcppcliTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+install(DIRECTORY include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/wcppcliConfigVersion.cmake"
+    COMPATIBILITY SameMajorVersion
+)
+
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/wcppcliConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/wcppcliConfig.cmake"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/wcppcli"
+)
+
+install(EXPORT wcppcliTargets
+    FILE wcppcliTargets.cmake
+    NAMESPACE wcppcli::
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/wcppcli"
+)
+
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/wcppcliConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/wcppcliConfigVersion.cmake"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/wcppcli"
+)

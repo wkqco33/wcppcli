@@ -71,6 +71,14 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+빠른 TDD 반복을 위해 테스트 목록을 확인하거나 이름 일부로 테스트를
+선택할 수 있습니다.
+
+```bash
+build/wcppcli_tests --list
+build/wcppcli_tests --filter "wconf priority"
+```
+
 ## 📖 라이브러리 사용 가이드
 
 ### 1. 설정 우선순위 및 스키마 검증 (wconf)
@@ -137,6 +145,25 @@ target_link_libraries(my_app PRIVATE wcppcli)
 1. `build` 디렉토리에서 생성된 `libwcppcli.a`를 가져옵니다.
 2. `include/wcppcli` 헤더 파일들을 프로젝트의 헤더 경로에 추가합니다.
 3. 컴파일러 플래그에 `-std=c++17`을 추가하고 라이브러리를 링크합니다.
+
+### 방법 C: vcpkg
+
+vcpkg 매니페스트 모드에서 `vcpkg.json`에 다음 의존성을 추가합니다.
+
+```json
+{
+  "dependencies": [
+    "wcppcli"
+  ]
+}
+```
+
+설치된 CMake 패키지는 `wcppcli::wcppcli` 타깃을 제공합니다.
+
+```cmake
+find_package(wcppcli CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE wcppcli::wcppcli)
+```
 
 ## 🧩 주요 예제 목록
 - `examples/priority_merge_example.cpp`: 설정 우선순위(CLI > Env > File) 테스트.

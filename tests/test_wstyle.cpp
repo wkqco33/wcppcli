@@ -18,8 +18,8 @@ TEST_CASE("pad_display pads based on display width, not byte length") {
 }
 
 TEST_CASE("format emits plain text (no ANSI codes) when NO_COLOR is set") {
-    setenv("NO_COLOR", "1", 1);
+    wtest::set_env("NO_COLOR", "1");
     std::string out = format("hello", Style(Color::Red, Color::None, true));
     CHECK_EQ(out, std::string("hello"));
-    unsetenv("NO_COLOR");
+    wtest::unset_env("NO_COLOR");
 }

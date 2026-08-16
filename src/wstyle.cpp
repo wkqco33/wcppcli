@@ -1,8 +1,8 @@
 #include "wcppcli/wstyle.hpp"
+#include "environment.hpp"
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
-#include <cstdlib>
 #ifdef _WIN32
     #include <io.h>
 #else
@@ -12,7 +12,7 @@
 namespace wcppcli {
 
     bool color_enabled() {
-        if (std::getenv("NO_COLOR") != nullptr) return false; // https://no-color.org 관례: 값과 무관하게 비활성화
+        if (detail::read_environment_variable("NO_COLOR")) return false; // https://no-color.org 관례
         #ifdef _WIN32
             return _isatty(_fileno(stdout)) != 0;
         #else
