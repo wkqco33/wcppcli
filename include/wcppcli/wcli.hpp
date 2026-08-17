@@ -44,6 +44,10 @@ namespace wcppcli {
         int execute(int argc, char** argv);
         void print_help() const;
         std::string generate_bash_completion() const;
+
+        // 주어진 이름의 플래그가 이번 실행에서 설정되었는지 여부.
+        // value_ptr 가 없는(monostate) "존재 확인용" 플래그를 조회할 때 유용하다.
+        bool flag_was_set(const std::string& name) const;
     };
 
 } // namespace wcppcli

@@ -6,6 +6,9 @@ Go의 `cobra`, `viper` 그리고 Python의 `rich` 라이브러리에서 영감�
 
 - **wcli (Command & Flag Parsing)**: 
   - 계층형 명령어 구조와 타입 세이프한 플래그 파싱. `Flag::value_ptr`가 가리키는 변수는 `Command::execute()` 호출이 끝날 때까지 살아있어야 함(댕글링 포인터 주의).
+  - bool 플래그는 `--flag`, `--flag=true/false`, `--flag=1/0/yes/no` 형태를 모두 지원.
+  - `--` 이후의 인자는 플래그가 아닌 positional 인자로 처리되며, `-5` 같은 음수/소수도 positional 인자로 취급.
+  - 값 없는(monostate) 플래그의 설정 여부는 `Command::flag_was_set("name")`으로 조회.
   - **설정값 우선순위 병합**: CLI 플래그 > 환경 변수 > 설정 파일 > 기본값 순의 계층적 설정 시스템.
   - **쉘 자동 완성**: Bash용 자동 완성 스크립트(`generate_bash_completion`) 생성 지원.
 - **wconf (Configuration Management)**: 

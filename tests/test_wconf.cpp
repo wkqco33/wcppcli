@@ -122,3 +122,24 @@ TEST_CASE("wconf write_file round-trips arrays") {
     CHECK_EQ(arr[1], std::string("b"));
     std::remove("test_wconf_roundtrip.json");
 }
+
+TEST_CASE("wconf write_file escapes quotes and backslashes in JSON strings") {
+    WConf conf;
+    conf.set("msg", std::string("say \"hi\" \\ path"));
+    conf.set("tags", std::vector<std::string>{"a\"b", "c\\d"});
+    CHECK(conf.write_file("test_wconf_escape.json"));
+
+    // 생성된 파일이 유효한 JSON이어야 한다 (따옴표/백슬래시가 이스케이프됨).
+    std::ifstream f("test_wconf_escape.json");
+    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    CHECK(content.find("say \\\"hi\\\" \\\\ path") != std::string::npos);
+
+    WConf reloaded;
+    CHECK(reloaded.read_file("test_wconf_escape.json"));
+    CHECK_EQ(reloaded.get_string("msg"), std::string("say \"hi\" \\ path"));
+    auto arr = reloaded.get_array("tags");
+    CHECK_EQ(arr.size(), static_cast<size_t>(2));
+    CHECK_EQ(arr[0], std::string("a\"b"));
+    CHECK_EQ(arr[1], std::string("c\\d"));
+    std::remove("test_wconf_escape.json");
+}

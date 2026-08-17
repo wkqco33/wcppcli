@@ -9,7 +9,7 @@ jobs:
   build-and-test:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -21,9 +21,34 @@ jobs:
           -DWCPPCLI_BUILD_EXAMPLES=ON
           -DWCPPCLI_BUILD_TOOL=ON
           -DWCPPCLI_BUILD_TESTS=ON
+          -DWCPPCLI_WARNINGS_AS_ERRORS=ON
 
       - name: Build
         run: cmake --build build --parallel
 
       - name: Test
         run: ctest --test-dir build -C Debug --output-on-failure
+
+      # wcli 코드 제너레이터 툴을 임시 디렉토리에서 end-to-end 로 검증한다.
+      - name: wcli tool end-to-end
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            WCLI="$GITHUB_WORKSPACE/build/Debug/wcli.exe"
+          else
+            WCLI="$GITHUB_WORKSPACE/build/wcli"
+          fi
+          TMP="$(mktemp -d)"
+          cd "$TMP"
+          "$WCLI" init demo
+          test -f CMakeLists.txt
+          test -f src/main.cpp
+          test -f .wcli
+          "$WCLI" add serve
+          test -f src/commands/cmd_serve.cpp
+          test -f include/demo/cmd_serve.hpp
+          "$WCLI" list | grep -q serve
+          "$WCLI" remove serve
+          test ! -f src/commands/cmd_serve.cpp
+          echo "wcli tool e2e OK"

@@ -1,6 +1,7 @@
 #include "wcppcli/wui.hpp"
 #include <iostream>
 #include <algorithm>
+#include <cctype>
 #include <limits>
 
 namespace wcppcli {
@@ -17,7 +18,7 @@ namespace wcppcli {
                 return default_val;
             }
 
-            std::transform(line.begin(), line.end(), line.begin(), ::tolower);
+            std::transform(line.begin(), line.end(), line.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
             if (line == "y" || line == "yes") return true;
             if (line == "n" || line == "no") return false;
             

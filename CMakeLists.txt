@@ -24,6 +24,7 @@ endif()
 option(WCPPCLI_BUILD_EXAMPLES "Build wcppcli example executables" ${WCPPCLI_IS_TOP_LEVEL})
 option(WCPPCLI_BUILD_TOOL "Build the wcli code-gen tool executable" ${WCPPCLI_IS_TOP_LEVEL})
 option(WCPPCLI_BUILD_TESTS "Build wcppcli unit tests" ${WCPPCLI_IS_TOP_LEVEL})
+option(WCPPCLI_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 
 # Library
 add_library(wcppcli
@@ -33,6 +34,26 @@ add_library(wcppcli
     src/wui.cpp
     src/wlog.cpp
 )
+
+# C++17 표준 요구사항을 소비자에게 전파 (전역 CMAKE_CXX_STANDARD 에만 의존하지 않음).
+target_compile_features(wcppcli PUBLIC cxx_std_17)
+
+# 경고 플래그: 라이브러리와 테스트/예제/툴에 일관 적용.
+function(wcppcli_enable_warnings target)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4)
+        if(WCPPCLI_WARNINGS_AS_ERRORS)
+            target_compile_options(${target} PRIVATE /WX)
+        endif()
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+        if(WCPPCLI_WARNINGS_AS_ERRORS)
+            target_compile_options(${target} PRIVATE -Werror)
+        endif()
+    endif()
+endfunction()
+
+wcppcli_enable_warnings(wcppcli)
 
 if(WIN32)
     set_target_properties(wcppcli PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
@@ -47,6 +68,7 @@ if(WCPPCLI_BUILD_TOOL)
     # CLI Generator Tool
     add_executable(wcli src/wcli_main.cpp)
     target_link_libraries(wcli PRIVATE wcppcli)
+    wcppcli_enable_warnings(wcli)
 endif()
 
 if(WCPPCLI_BUILD_EXAMPLES)
@@ -79,6 +101,12 @@ if(WCPPCLI_BUILD_EXAMPLES)
     target_link_libraries(example_completion PRIVATE wcppcli)
 endif()
 
+foreach(example_target example_full example_formats example_nested example_ensure
+                      example_priority example_schema example_interactive example_log
+                      example_completion)
+    wcppcli_enable_warnings(${example_target})
+endforeach()
+
 if(WCPPCLI_BUILD_TESTS)
     enable_testing()
     add_executable(wcppcli_tests
@@ -90,6 +118,7 @@ if(WCPPCLI_BUILD_TESTS)
     )
     target_include_directories(wcppcli_tests PRIVATE tests)
     target_link_libraries(wcppcli_tests PRIVATE wcppcli)
+    wcppcli_enable_warnings(wcppcli_tests)
     add_test(NAME wcppcli_tests COMMAND wcppcli_tests)
     set_tests_properties(wcppcli_tests PROPERTIES LABELS "unit")
 endif()

@@ -22,6 +22,45 @@ namespace wcppcli {
         return s.substr(start, end - start + 1);
     }
 
+    // JSON 문자열 값에 포함된 특수 문자를 이스케이프 (유효한 JSON 생성용).
+    static std::string json_escape(const std::string& s) {
+        std::string out;
+        out.reserve(s.size());
+        for (char c : s) {
+            switch (c) {
+                case '"':  out += "\\\""; break;
+                case '\\': out += "\\\\"; break;
+                case '\n': out += "\\n";  break;
+                case '\r': out += "\\r";  break;
+                case '\t': out += "\\t";  break;
+                default:   out += c;       break;
+            }
+        }
+        return out;
+    }
+
+    // JSON 이스케이프 시퀀스를 원래 문자로 복원.
+    static std::string json_unescape(const std::string& s) {
+        std::string out;
+        out.reserve(s.size());
+        for (size_t i = 0; i < s.size(); ++i) {
+            if (s[i] == '\\' && i + 1 < s.size()) {
+                char n = s[i + 1];
+                switch (n) {
+                    case '"':  out += '"';  ++i; break;
+                    case '\\': out += '\\'; ++i; break;
+                    case 'n':  out += '\n'; ++i; break;
+                    case 'r':  out += '\r'; ++i; break;
+                    case 't':  out += '\t'; ++i; break;
+                    default:   out += s[i];       break;
+                }
+            } else {
+                out += s[i];
+            }
+        }
+        return out;
+    }
+
     // 따옴표로 감싸인 값은 문자열로, "true"/"false"는 bool로, 숫자는 int로 추론.
     // 파일에서 읽은 값도 CLI/코드로 직접 set()한 값과 동일한 타입을 갖도록 하기 위함.
     static WConf::ValueType parse_scalar(const std::string& raw) {
@@ -30,7 +69,7 @@ namespace wcppcli {
         auto end = raw.find_last_not_of(" \t\r\n,");
         std::string v = raw.substr(start, end - start + 1);
 
-        if (v.size() >= 2 && v.front() == '"' && v.back() == '"') return v.substr(1, v.size() - 2);
+        if (v.size() >= 2 && v.front() == '"' && v.back() == '"') return json_unescape(v.substr(1, v.size() - 2));
         if (v == "true") return true;
         if (v == "false") return false;
         if (!v.empty()) {
@@ -60,7 +99,7 @@ namespace wcppcli {
         std::string item;
         while (std::getline(ss, item, ',')) {
             std::string trimmed = trim(item);
-            if (!trimmed.empty()) items.push_back(trimmed);
+            if (!trimmed.empty()) items.push_back(json_unescape(trimmed));
         }
         return items;
     }
@@ -68,7 +107,7 @@ namespace wcppcli {
     static void write_array(std::ostream& f, const std::vector<std::string>& arr) {
         f << "[";
         for (size_t i = 0; i < arr.size(); ++i) {
-            f << "\"" << arr[i] << "\"";
+            f << "\"" << json_escape(arr[i]) << "\"";
             if (i + 1 < arr.size()) f << ", ";
         }
         f << "]";
@@ -78,7 +117,7 @@ namespace wcppcli {
         size_t dot = path.find_last_of('.');
         if (dot == std::string::npos) return read_json(path);
         std::string ext = path.substr(dot + 1);
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         if (ext == "json") return read_json(path);
         if (ext == "toml" || ext == "ini" || ext == "env") return read_toml(path);
         if (ext == "yaml" || ext == "yml") return read_yaml(path);
@@ -97,13 +136,13 @@ namespace wcppcli {
 
         size_t dot = path.find_last_of('.');
         std::string ext = (dot == std::string::npos) ? "json" : path.substr(dot + 1);
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
         if (ext == "json") {
             f << "{\n";
             for (auto it = values_.begin(); it != values_.end(); ++it) {
                 f << "  \"" << it->first << "\": ";
-                if (std::holds_alternative<std::string>(it->second)) f << "\"" << std::get<std::string>(it->second) << "\"";
+                if (std::holds_alternative<std::string>(it->second)) f << "\"" << json_escape(std::get<std::string>(it->second)) << "\"";
                 else if (std::holds_alternative<int>(it->second)) f << std::get<int>(it->second);
                 else if (std::holds_alternative<bool>(it->second)) f << (std::get<bool>(it->second) ? "true" : "false");
                 else if (std::holds_alternative<std::vector<std::string>>(it->second)) write_array(f, std::get<std::vector<std::string>>(it->second));
@@ -114,7 +153,7 @@ namespace wcppcli {
         } else if (ext == "toml" || ext == "ini") {
             for (const auto& [k, v] : values_) {
                 f << k << " = ";
-                if (std::holds_alternative<std::string>(v)) f << "\"" << std::get<std::string>(v) << "\"\n";
+                if (std::holds_alternative<std::string>(v)) f << "\"" << json_escape(std::get<std::string>(v)) << "\"\n";
                 else if (std::holds_alternative<int>(v)) f << std::get<int>(v) << "\n";
                 else if (std::holds_alternative<bool>(v)) f << (std::get<bool>(v) ? "true" : "false") << "\n";
                 else if (std::holds_alternative<std::vector<std::string>>(v)) { write_array(f, std::get<std::vector<std::string>>(v)); f << "\n"; }
@@ -122,7 +161,7 @@ namespace wcppcli {
         } else if (ext == "yaml" || ext == "yml") {
             for (const auto& [k, v] : values_) {
                 f << k << ": ";
-                if (std::holds_alternative<std::string>(v)) f << "\"" << std::get<std::string>(v) << "\"\n";
+                if (std::holds_alternative<std::string>(v)) f << "\"" << json_escape(std::get<std::string>(v)) << "\"\n";
                 else if (std::holds_alternative<int>(v)) f << std::get<int>(v) << "\n";
                 else if (std::holds_alternative<bool>(v)) f << (std::get<bool>(v) ? "true" : "false") << "\n";
                 else if (std::holds_alternative<std::vector<std::string>>(v)) { write_array(f, std::get<std::vector<std::string>>(v)); f << "\n"; }
@@ -214,7 +253,7 @@ namespace wcppcli {
         else {
             env_name = env_prefix_.empty() ? key : env_prefix_ + "_" + key;
             std::replace(env_name.begin(), env_name.end(), '.', '_');
-            std::transform(env_name.begin(), env_name.end(), env_name.begin(), ::toupper);
+            std::transform(env_name.begin(), env_name.end(), env_name.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
         }
         return detail::read_environment_variable(env_name.c_str());
     }
@@ -257,7 +296,7 @@ namespace wcppcli {
         else return false;
 
         if (s.empty()) return false;
-        std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         return s == "true" || s == "1" || s == "yes";
     }
 

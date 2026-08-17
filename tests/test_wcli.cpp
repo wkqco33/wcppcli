@@ -105,3 +105,67 @@ TEST_CASE("wcli catches exceptions thrown from handlers and returns exit code 1"
     root.handler = [](const Command&) -> int { throw std::runtime_error("boom"); };
     CHECK_EQ(run_cli(root, {}), 1);
 }
+
+TEST_CASE("wcli bool flag honors --flag=false / --flag=true values") {
+    Command root;
+    bool verbose = false;
+    Flag vf; vf.name = "verbose"; vf.shorthand = 'v'; vf.value_ptr = &verbose; root.add_flag(vf);
+    root.handler = [](const Command&) { return 0; };
+
+    CHECK_EQ(run_cli(root, {"--verbose=false"}), 0);
+    CHECK(!verbose);
+
+    CHECK_EQ(run_cli(root, {"--verbose=true"}), 0);
+    CHECK(verbose);
+
+    CHECK_EQ(run_cli(root, {"--verbose"}), 0);
+    CHECK(verbose);
+}
+
+TEST_CASE("wcli bool flag accepts 0/1/yes/no as boolean values") {
+    Command root;
+    bool a = false, b = true;
+    Flag af; af.name = "a"; af.value_ptr = &a; root.add_flag(af);
+    Flag bf; bf.name = "b"; bf.value_ptr = &b; root.add_flag(bf);
+    root.handler = [](const Command&) { return 0; };
+
+    CHECK_EQ(run_cli(root, {"--a=1", "--b=no"}), 0);
+    CHECK(a);
+    CHECK(!b);
+}
+
+TEST_CASE("wcli flag_was_set reports presence for value-less (monostate) flags") {
+    Command root;
+    Flag vf; vf.name = "verbose"; vf.value_ptr = std::monostate{}; root.add_flag(vf);
+    bool quiet = false;
+    Flag qf; qf.name = "quiet"; qf.value_ptr = &quiet; root.add_flag(qf);
+    root.handler = [](const Command&) { return 0; };
+
+    CHECK_EQ(run_cli(root, {"--verbose"}), 0);
+    CHECK(root.flag_was_set("verbose"));
+    CHECK(!root.flag_was_set("quiet"));
+    CHECK(!root.flag_was_set("nonexistent"));
+}
+
+TEST_CASE("wcli treats args after -- as positional even if they start with -") {
+    Command root;
+    std::vector<std::string> captured;
+    root.handler = [&captured](const Command& cmd) { captured = cmd.args; return 0; };
+
+    CHECK_EQ(run_cli(root, {"--", "-x", "--y", "-5"}), 0);
+    CHECK_EQ(captured.size(), static_cast<size_t>(3));
+    CHECK_EQ(captured[0], std::string("-x"));
+    CHECK_EQ(captured[1], std::string("--y"));
+    CHECK_EQ(captured[2], std::string("-5"));
+}
+
+TEST_CASE("wcli treats negative-number positional args as args, not flags") {
+    Command root;
+    std::vector<std::string> captured;
+    root.handler = [&captured](const Command& cmd) { captured = cmd.args; return 0; };
+
+    CHECK_EQ(run_cli(root, {"-5", "-3.14"}), 0);
+    CHECK_EQ(captured.size(), static_cast<size_t>(2));
+    CHECK_EQ(captured[0], std::string("-5"));
+    CHECK_EQ(captured[1], std::string("-3.14"));
+}
