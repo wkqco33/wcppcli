@@ -99,13 +99,13 @@ if(WCPPCLI_BUILD_EXAMPLES)
 
     add_executable(example_completion examples/completion_example.cpp)
     target_link_libraries(example_completion PRIVATE wcppcli)
-endif()
 
-foreach(example_target example_full example_formats example_nested example_ensure
-                      example_priority example_schema example_interactive example_log
-                      example_completion)
-    wcppcli_enable_warnings(${example_target})
-endforeach()
+    foreach(example_target example_full example_formats example_nested example_ensure
+                          example_priority example_schema example_interactive example_log
+                          example_completion)
+        wcppcli_enable_warnings(${example_target})
+    endforeach()
+endif()
 
 if(WCPPCLI_BUILD_TESTS)
     enable_testing()
