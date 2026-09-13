@@ -1,6 +1,8 @@
 #include "wcppcli/wcli.hpp"
 #include "test_framework.hpp"
+#include <iostream>
 #include <memory>
+#include <sstream>
 #include <vector>
 
 using namespace wcppcli;
@@ -52,6 +54,14 @@ TEST_CASE("wcli unknown flag returns exit code 1") {
     CHECK_EQ(run_cli(root, {"--nope"}), 1);
 }
 
+TEST_CASE("wcli usage_error_code overrides the exit code of parse failures") {
+    Command root;
+    root.usage_error_code = 2;
+    root.handler = [](const Command&) { return 0; };
+    CHECK_EQ(run_cli(root, {"--nope"}), 2);
+    CHECK_EQ(run_cli(root, {"-z"}), 2);
+}
+
 TEST_CASE("wcli invalid integer flag value returns exit code 1") {
     Command root;
     int n = 0;
@@ -98,6 +108,36 @@ TEST_CASE("wcli --version prints and exits 0 without invoking the handler") {
 
     CHECK_EQ(run_cli(root, {"--version"}), 0);
     CHECK(!handler_called);
+}
+
+TEST_CASE("wcli print_help appends the epilog (docs/issue links, examples)") {
+    Command root;
+    root.name = "iggen";
+    root.description = "generates .gitignore";
+    root.epilog = "Documentation: https://example.com/docs";
+
+    std::ostringstream buf;
+    auto* old_cout = std::cout.rdbuf(buf.rdbuf());
+    root.print_help();
+    std::cout.rdbuf(old_cout);
+
+    CHECK(buf.str().find("Documentation: https://example.com/docs") != std::string::npos);
+}
+
+TEST_CASE("wcli --help exits 0 and does not run the handler") {
+    Command root;
+    root.name = "iggen";
+    bool handler_called = false;
+    root.handler = [&handler_called](const Command&) { handler_called = true; return 0; };
+
+    std::ostringstream buf;
+    auto* old_cout = std::cout.rdbuf(buf.rdbuf());
+    const int code = run_cli(root, {"--help"});
+    std::cout.rdbuf(old_cout);
+
+    CHECK_EQ(code, 0);
+    CHECK(!handler_called);
+    CHECK(buf.str().find("Usage:") != std::string::npos);
 }
 
 TEST_CASE("wcli catches exceptions thrown from handlers and returns exit code 1") {
@@ -168,4 +208,32 @@ TEST_CASE("wcli treats negative-number positional args as args, not flags") {
     CHECK_EQ(captured.size(), static_cast<size_t>(2));
     CHECK_EQ(captured[0], std::string("-5"));
     CHECK_EQ(captured[1], std::string("-3.14"));
+}
+
+TEST_CASE("wcli subcommands inherit the parent usage_error_code") {
+    Command root;
+    root.usage_error_code = 2;
+    auto sub = std::make_unique<Command>();
+    sub->name = "update";
+    sub->handler = [](const Command&) { return 0; };
+    root.add_command(std::move(sub));
+    root.handler = [](const Command&) { return 0; };
+
+    CHECK_EQ(run_cli(root, {"update", "--nope"}), 2);
+}
+
+TEST_CASE("wcli errors when a value-requiring flag has no value") {
+    Command root;
+    root.usage_error_code = 2;
+    std::string name = "unset";
+    Flag nf; nf.name = "name"; nf.value_ptr = &name; root.add_flag(nf);
+    root.handler = [](const Command&) { return 0; };
+
+    // 값이 없으면 조용히 무시하지 않고 사용법 오류로 실패해야 한다.
+    CHECK_EQ(run_cli(root, {"--name"}), 2);
+    CHECK_EQ(name, std::string("unset"));
+
+    // `--name=` 처럼 명시적으로 빈 값을 주는 것은 허용한다.
+    CHECK_EQ(run_cli(root, {"--name="}), 0);
+    CHECK_EQ(name, std::string(""));
 }

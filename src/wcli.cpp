@@ -78,16 +78,20 @@ namespace wcppcli {
                     } else {
                         if (!has_val && idx + 1 < raw_args.size()) { val = raw_args[++idx]; has_val = true; }
                         if (has_val) {
-                            if (!assign_flag_value(current, f, val)) return 1;
+                            if (!assign_flag_value(current, f, val)) return current->usage_error_code;
                         } else if (std::holds_alternative<std::monostate>(f.value_ptr)) {
                             // 인자 없는 단독 플래그인 경우 (true로 간주하거나 그냥 changed만 표시)
                             f.changed = true;
                             if (current->conf_ptr && !f.config_key.empty()) current->conf_ptr->set_cli(f.config_key, true);
+                        } else {
+                            // 값을 받는 플래그인데 값이 없으면 조용히 무시하지 않고 실패한다.
+                            WLog::error("flag --" + f.name + " requires a value");
+                            return current->usage_error_code;
                         }
                     }
                     break;
                 }
-                if (!found) { WLog::error("unknown flag: " + std::string(arg)); return 1; }
+                if (!found) { WLog::error("unknown flag: " + std::string(arg)); return current->usage_error_code; }
             } else if (!after_double_dash && is_flag(arg)) {
                 // 단일 '-' 플래그: shorthand 1개(-p) 또는 조합/인라인 값(-abc, -p8080) 형태를 모두 처리.
                 // bool 플래그는 조합해서 이어붙일 수 있고, 값이 필요한 플래그를 만나면 그 뒤 남은
@@ -101,7 +105,7 @@ namespace wcppcli {
                     }
                     if (!matched) {
                         WLog::error("unknown flag: -" + std::string(1, c) + " (in " + std::string(arg) + ")");
-                        return 1;
+                        return current->usage_error_code;
                     }
                     if (std::holds_alternative<bool*>(matched->value_ptr)) {
                         *std::get<bool*>(matched->value_ptr) = true;
@@ -113,10 +117,13 @@ namespace wcppcli {
                     bool has_val = !val.empty();
                     if (!has_val && idx + 1 < raw_args.size()) { val = raw_args[++idx]; has_val = true; }
                     if (has_val) {
-                        if (!assign_flag_value(current, *matched, val)) return 1;
+                        if (!assign_flag_value(current, *matched, val)) return current->usage_error_code;
                     } else if (std::holds_alternative<std::monostate>(matched->value_ptr)) {
                         matched->changed = true;
                         if (current->conf_ptr && !matched->config_key.empty()) current->conf_ptr->set_cli(matched->config_key, true);
+                    } else {
+                        WLog::error("flag -" + std::string(1, matched->shorthand) + " requires a value");
+                        return current->usage_error_code;
                     }
                     break; // 값을 소비했으므로 이 인자의 나머지 문자는 처리하지 않음
                 }
@@ -128,6 +135,8 @@ namespace wcppcli {
                     for (auto& cmd : current->subcommands) {
                         if (cmd->name == arg) {
                             if (!cmd->conf_ptr) cmd->conf_ptr = current->conf_ptr; // 전파
+                            // 하위 커맨드가 자체 지정하지 않았으면 상위의 사용법 오류 코드를 따른다.
+                            if (cmd->usage_error_code == 1) cmd->usage_error_code = current->usage_error_code;
                             current = cmd.get();
                             sub_found = true;
                             break;
@@ -142,7 +151,7 @@ namespace wcppcli {
         for (const auto& f : current->flags) {
             if (f.required && !f.changed) {
                 WLog::error("required flag --" + f.name + " not set");
-                return 1;
+                return current->usage_error_code;
             }
         }
 
@@ -180,6 +189,9 @@ namespace wcppcli {
                 std::cout << pad_display(info, 25) << " " << f.description << std::endl;
             }
             std::cout << std::endl;
+        }
+        if (!epilog.empty()) {
+            std::cout << epilog << std::endl;
         }
     }
 

@@ -29,7 +29,12 @@ namespace wcppcli {
         std::string name;
         std::string description;
         std::string usage;
+        // 파싱 실패(알 수 없는 플래그, 잘못된 값, 필수 플래그 누락) 시 반환할 종료 코드.
+        // 기본 1은 기존 동작과 호환되며, 앱이 "사용법 오류"를 별도 코드로 구분할 때 지정한다.
+        int usage_error_code = 1;
         std::string version; // 비어있지 않으면 --version 플래그를 자동으로 처리
+        // 도움말 마지막에 출력할 문서/이슈 링크·예시 블록.
+        std::string epilog;
         CommandHandler handler;
         WConf* conf_ptr = nullptr; // 연동할 설정 인스턴스
 
