@@ -61,3 +61,49 @@ TEST_CASE("wlog defaults to info level when WCPPCLI_LOG_LEVEL is unset") {
     CHECK(out.find("d-msg3") == std::string::npos);
     CHECK(out.find("i-msg3") != std::string::npos);
 }
+
+TEST_CASE("wlog writes every level to stderr so stdout stays machine-readable") {
+    std::ostringstream out_buf;
+    std::ostringstream err_buf;
+    auto* old_cout = std::cout.rdbuf(out_buf.rdbuf());
+    auto* old_cerr = std::cerr.rdbuf(err_buf.rdbuf());
+    WLog::info("i-stream");
+    WLog::success("s-stream");
+    WLog::warn("w-stream");
+    WLog::error("e-stream");
+    std::cout.rdbuf(old_cout);
+    std::cerr.rdbuf(old_cerr);
+
+    CHECK(out_buf.str().empty());
+    CHECK(err_buf.str().find("i-stream") != std::string::npos);
+    CHECK(err_buf.str().find("s-stream") != std::string::npos);
+    CHECK(err_buf.str().find("w-stream") != std::string::npos);
+    CHECK(err_buf.str().find("e-stream") != std::string::npos);
+}
+
+TEST_CASE("wlog set_min_level overrides WCPPCLI_LOG_LEVEL until reset") {
+    wtest::set_env("WCPPCLI_LOG_LEVEL", "debug");
+    WLog::set_min_level(LogLevel::Error);
+
+    std::string quiet = capture_log_output([] {
+        WLog::info("i-override");
+        WLog::error("e-override");
+    });
+    CHECK(quiet.find("i-override") == std::string::npos);
+    CHECK(quiet.find("e-override") != std::string::npos);
+
+    WLog::reset_min_level();
+    std::string restored = capture_log_output([] { WLog::debug("d-override"); });
+    CHECK(restored.find("d-override") != std::string::npos);
+
+    wtest::unset_env("WCPPCLI_LOG_LEVEL");
+}
+
+TEST_CASE("wlog set_min_level(Debug) enables debug logging on a non-tty run") {
+    wtest::unset_env("WCPPCLI_LOG_LEVEL");
+    WLog::set_min_level(LogLevel::Debug);
+    std::string out = capture_log_output([] { WLog::debug("d-debug-on"); });
+    WLog::reset_min_level();
+
+    CHECK(out.find("d-debug-on") != std::string::npos);
+}

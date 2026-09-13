@@ -11,17 +11,56 @@
 
 namespace wcppcli {
 
-    bool color_enabled() {
+    namespace {
+        enum class ColorOverride { Auto, Always, Never };
+
+        ColorOverride& color_override() {
+            static ColorOverride mode = ColorOverride::Auto;
+            return mode;
+        }
+
+        // stdout/stderr FILE* 기준으로 tty 여부를 본다. 그 외(파일/stringstream)는 색상 없음.
+        bool stream_is_tty(const std::ostream& os) {
+            if (os.rdbuf() == std::cerr.rdbuf()) {
+                #ifdef _WIN32
+                    return _isatty(_fileno(stderr)) != 0;
+                #else
+                    return isatty(fileno(stderr)) != 0;
+                #endif
+            }
+            if (os.rdbuf() == std::cout.rdbuf()) {
+                #ifdef _WIN32
+                    return _isatty(_fileno(stdout)) != 0;
+                #else
+                    return isatty(fileno(stdout)) != 0;
+                #endif
+            }
+            return false;
+        }
+    } // namespace
+
+    bool color_enabled(const std::ostream& os) {
+        switch (color_override()) {
+            case ColorOverride::Always: return true;
+            case ColorOverride::Never:  return false;
+            case ColorOverride::Auto:   break;
+        }
         if (detail::read_environment_variable("NO_COLOR")) return false; // https://no-color.org 관례
-        #ifdef _WIN32
-            return _isatty(_fileno(stdout)) != 0;
-        #else
-            return isatty(fileno(stdout)) != 0;
-        #endif
+        const auto term = detail::read_environment_variable("TERM");
+        if (term && *term == "dumb") return false;
+        return stream_is_tty(os);
     }
 
-    std::string format(std::string_view text, const Style& style) {
-        if (!color_enabled()) return std::string(text);
+    bool color_enabled() { return color_enabled(std::cout); }
+
+    void set_color_enabled(bool enabled) {
+        color_override() = enabled ? ColorOverride::Always : ColorOverride::Never;
+    }
+
+    void reset_color_enabled() { color_override() = ColorOverride::Auto; }
+
+    std::string format(std::string_view text, const Style& style, const std::ostream& os) {
+        if (!color_enabled(os)) return std::string(text);
 
         std::vector<int> codes;
         if (style.bold) codes.push_back(1);
@@ -44,7 +83,7 @@ namespace wcppcli {
         return oss.str();
     }
 
-    void print(std::string_view text, const Style& style) { std::cout << format(text, style) << std::endl; }
+    void print(std::string_view text, const Style& style) { std::cout << format(text, style, std::cout) << std::endl; }
 
     namespace {
         // UTF-8 한 글자를 디코딩하고 바이트 길이를 반환

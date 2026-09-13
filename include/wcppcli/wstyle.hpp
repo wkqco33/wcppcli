@@ -21,11 +21,17 @@ namespace wcppcli {
             : fg(f), bg(b), bold(bld) {}
     };
 
-    // NO_COLOR 환경변수 또는 비-tty stdout(파이프/리다이렉션) 여부에 따라 색상 출력 여부를 판단.
-    // 매 호출마다 재평가하며(캐싱하지 않음) format() 이 내부적으로 사용한다.
+    // NO_COLOR 환경변수, TERM=dumb, 또는 비-tty 스트림이면 색상 출력이 꺼진다.
+    // set_color_enabled() 로 명시 지정한 값이 자동 판단보다 우선하며
+    // reset_color_enabled() 로 자동 판단으로 되돌린다.
     bool color_enabled();
+    bool color_enabled(const std::ostream& os);
+    void set_color_enabled(bool enabled);
+    void reset_color_enabled();
 
-    std::string format(std::string_view text, const Style& style);
+    // 색상 적용 여부는 os의 tty 여부로 판단한다(stdout이 tty여도 리다이렉트된 stderr에
+    // ANSI 코드가 새지 않도록 로그 스트림을 넘겨 쓴다).
+    std::string format(std::string_view text, const Style& style, const std::ostream& os = std::cout);
     void print(std::string_view text, const Style& style = Style());
 
     // UTF-8 문자열의 터미널 표시 폭 계산 (한글/CJK 등 넓은 문자는 2칸으로 계산).

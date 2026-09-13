@@ -53,24 +53,48 @@ namespace wcppcli {
         // 호출마다 환경변수를 재평가한다 (캐싱하지 않음). 로그 호출은 핫패스가 아니므로
         // 비용이 무시할 만한 수준이며, 테스트/서브프로세스에서 WCPPCLI_LOG_LEVEL을
         // 바꿔가며 검증할 수 있어야 하기 때문.
+        // set_min_level() 로 명시 지정된 값이 있으면 그 값이 우선한다.
+        struct LevelOverride {
+            bool set = false;
+            LogLevel level = LogLevel::Info;
+        };
+
+        LevelOverride& level_override() {
+            static LevelOverride override_state;
+            return override_state;
+        }
+
+        LogLevel effective_min_level() {
+            const LevelOverride& override_state = level_override();
+            if (override_state.set) return override_state.level;
+            return parse_min_level_from_env();
+        }
+
         bool should_log(LogLevel level) {
-            return level_priority(level) >= level_priority(parse_min_level_from_env());
+            return level_priority(level) >= level_priority(effective_min_level());
         }
 
     } // namespace
+
+    void WLog::set_min_level(LogLevel level) {
+        level_override().set = true;
+        level_override().level = level;
+    }
+
+    void WLog::reset_min_level() { level_override().set = false; }
 
     void WLog::log(LogLevel level, std::string_view message) {
         if (!should_log(level)) {
             return;
         }
 
-        std::ostream& out =
-            (level == LogLevel::Info || level == LogLevel::Success) ? std::cout : std::cerr;
+        // 결과(stdout)와 상태·진단(stderr)을 분리해야 파이프/CI에서 stdout을 그대로 쓸 수 있다.
+        std::ostream& out = std::cerr;
         
         Style level_style = get_level_style(level);
         std::string label = "[" + std::string(get_level_label(level)) + "]";
         
-        out << format(label, level_style) << " " << message << std::endl;
+        out << format(label, level_style, out) << " " << message << std::endl;
     }
 
     Style WLog::get_level_style(LogLevel level) {
