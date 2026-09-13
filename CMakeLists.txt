@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(wcppcli VERSION 0.1.0 LANGUAGES CXX)
+project(wcppcli VERSION 0.2.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
@@ -115,6 +115,7 @@ if(WCPPCLI_BUILD_TESTS)
         tests/test_wcli.cpp
         tests/test_wstyle.cpp
         tests/test_wlog.cpp
+        tests/test_wui.cpp
     )
     target_include_directories(wcppcli_tests PRIVATE tests)
     target_link_libraries(wcppcli_tests PRIVATE wcppcli)

@@ -1,6 +1,6 @@
 {
   "name": "wcppcli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Dependency-free C++17 CLI, configuration, terminal UI, and logging framework",
   "homepage": "https://github.com/wkqco33/wcppcli",
   "license": "MIT",

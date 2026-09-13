@@ -18,8 +18,17 @@ Go의 `cobra`, `viper` 그리고 Python의 `rich` 라이브러리에서 영감�
 - **wstyle & wui (Terminal UI & Prompts)**: 
   - **UI 컴포넌트**: 표(Table), 진행 바(ProgressBar), 패널(Panel) 제공.
   - **인터랙티브 프롬프트**: `confirm`, `input`, `select` 등 사용자 입력 UI 지원.
+  - **비대화형 안전장치**: stdin이 tty가 아니면 프롬프트를 출력하지 않고 stdin도 읽지
+    않으며 기본값을 반환한다(`ui::interactive_enabled()`로 사전 확인 가능).
+  - **프롬프트는 stderr로 출력**해 stdout을 결과 전용으로 남긴다.
+  - `set_color_enabled(bool)` / `reset_color_enabled()`로 색상 출력을 강제/자동 전환.
 - **wlog (Structured Logging)**: 
   - `DEBUG`, `INFO`, `SUCCESS`, `WARN`, `ERROR` 레벨별 스타일 로깅 제공.
+  - **모든 로그는 stderr**로 출력한다(결과는 stdout). `stdout`을 파이프/리다이렉션해도
+    로그가 섞이지 않는다.
+  - 최소 레벨은 `WCPPCLI_LOG_LEVEL` 환경변수 또는 `WLog::set_min_level()`
+    (`reset_min_level()`로 자동 판단 복귀)로 지정하며, 프로그램적 설정이 우선한다.
+  - `Command::epilog`로 도움말 끝에 문서/이슈 링크와 예시를 붙일 수 있다.
 
 ## ⚡ wcli 제너레이터 (Code Generator)
 
@@ -104,7 +113,8 @@ if (!conf.validate()) { /* 에러 처리 */ }
 ```
 
 ### 2. 인터랙티브 UI 및 로깅 (wui, wlog)
-사용자와 상호작용하고 상태를 시각적으로 출력합니다.
+사용자와 상호작용하고 상태를 시각적으로 출력합니다. 프롬프트와 로그는 모두 stderr로
+나가므로 stdout은 명령의 결과 전용으로 유지됩니다.
 
 ```cpp
 #include "wcppcli/wui.hpp"
@@ -112,11 +122,23 @@ if (!conf.validate()) { /* 에러 처리 */ }
 
 using namespace wcppcli;
 
-// 사용자 입력 받기
-if (ui::confirm("서비스를 시작할까요?")) {
-    WLog::info("서비스 시작 중...");
-    // ...
-    WLog::success("서비스가 실행되었습니다.");
+int main(int argc, char** argv) {
+    Command root;
+    root.name = "myapp";
+
+    // --quiet/--debug 같은 앱 플래그에 맞춰 로그 레벨을 제어한다.
+    if (root.flag_was_set("quiet")) WLog::set_min_level(LogLevel::Error);
+
+    // 파이프/CI에서는 프롬프트 없이 기본값으로 진행한다.
+    if (!ui::interactive_enabled()) {
+        ui::set_interactive_enabled(false); // --no-input 과 동일한 효과
+    }
+
+    if (ui::confirm("서비스를 시작할까요?")) {
+        WLog::info("서비스 시작 중...");   // stderr
+        WLog::success("서비스가 실행되었습니다."); // stderr
+        std::cout << result << "\n";       // stdout: 결과 전용
+    }
 }
 ```
 
